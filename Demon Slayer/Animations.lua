@@ -59,10 +59,10 @@ return {
   -- // Skills \\ --
     Slayers = {
         range = 20,
-        TripleStrike = { id = "102384282811717",  type = "parry", t = 0.3 },
-        Sever = { id = "104727243018430",  type = "parry", t = 0.4,},
-        DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.2 },
-        PhantomRend = { id = "79199587090357", type = "parry", t = 0.45 },
+        TripleStrike = { id = "102384282811717",  type = "parry", t = 0.25 },
+        Sever = { id = "104727243018430",  type = "parry", t = 0.55, range = 45 },
+        DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.15 },
+        PhantomRend = { id = "79199587090357", type = "parry", t = 0.275, range = 35 },
     },
 
   
