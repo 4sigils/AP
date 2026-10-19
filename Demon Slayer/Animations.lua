@@ -1,11 +1,4 @@
 return {
-[04:10:36] : [Demon://Slayer] Track: sigiltatted | Unknown | 125094062025381 | 0.02s in | new
-[04:10:36] : [Demon://Slayer] Track: sigiltatted | Unknown | 109885476706150 | 0.00s in | new
-[04:10:37] : [Demon://Slayer] Track: sigiltatted | Unknown | 77151462184045 | 0.03s in | new
-[04:10:37] : [Demon://Slayer] Track: sigiltatted | Unknown | 134599650345242 | 0.01s in | new
-[04:10:38] : [Demon://Slayer] Track: sigiltatted | Unknown | 71289364417188 | 0.02s in | new
-[04:10:39] : [Demon://Slayer] Track: sigiltatted | Unknown | 180435792 | 0.01s in | new
-
   -- // Weapons \\ --
     CombustibleBlood = {
         range = 20,
