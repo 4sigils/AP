@@ -1078,21 +1078,22 @@ end
 local feintSec = mainTab:AddSection("Feints", "Handling for canceled swings.", { Column = "right" })
 Reg("sb_feint_detect", feintSec:AddToggle({
     Title = "Detect Feints",
-    Tooltip = "A sound named \"Feint\" appearing on the enemy means they feinted: the animation that was playing right before it is not parried (unless Parry Feint Chance rolls). Animations that start after the sound appeared are unaffected. A swing that stops early is still treated as a feint either way.",
+    Tooltip = "The \"FeintedAt\" attribute changing on the enemy, or a sound named \"Feint\" appearing on them, means they feinted: every swing of that enemy that was still waiting to fire is cancelled (unless Parry Feint Chance rolls). Animations that start after the sound appeared are unaffected. A swing that stops early is still treated as a feint either way.",
     Default = true,
     ConfigKey = "demonslayer.parry.feintDetect",
 }))
 Reg("sb_parry_feint_chance", feintSec:AddSlider({
     Title = "Parry Feint Chance",
-    Tooltip = "Chance to still act when a swing gets canceled early (a feint)",
+    Tooltip = "Chance to still press the scheduled key after a feint is detected. At 0%, detected feints are skipped; at 100%, they are always acted on.",
     Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
     ConfigKey = "demonslayer.parry.feintChance",
 }))
-Reg("sb_parry_feint_grace", feintSec:AddSlider({
-    Title = "Feint Grace",
-    Tooltip = "How long after the normal moment to keep watching for a late feint before committing",
-    Min = 0, Max = 300, Step = 5, Default = 100, Suffix = "ms",
-    ConfigKey = "demonslayer.parry.feintGrace",
+
+Reg("sb_feint_rate", feintSec:AddSlider({
+    Title = "Feint Check Rate",
+    Tooltip = "How often the FeintedAt attribute is checked on enemies that have an animation playing, in ms between checks. Lower = faster (0 = every frame). Feint sound detection also gets a short safety window before sending a key.",
+    Min = 0, Max = 100, Step = 1, Default = 5, Suffix = "ms",
+    ConfigKey = "demonslayer.parry.feintCheckRate",
 }))
 
 -- DODGING (own section)
@@ -1894,10 +1895,64 @@ end
 -- Combat state kept in one table (the script is close to Lua's limit of local variables):
 --   lastDodge : os.clock() of the last dodge (Q) that went out, for the Dodge Cooldown
 --   hl[model] : per-enemy feint-sound tracking { present, at = when the sound appeared, starts = recent animation start times }
-local Combat = { lastDodge = -math.huge, hl = {}, hlCount = 0, SOUND = "Feint" }
+local Combat = { lastDodge = -math.huge, hl = {}, hlCount = 0, SOUND = "Feint", Paths = {}, PathSet = {} }
 
-local function ChildNamed(inst, name) return inst:FindFirstChild(name) end
-local function DeepChildNamed(inst, name) return inst:FindFirstChild(name, true) end
+-- helpers for the feint scan (plain functions so pcall doesn't allocate a closure per call)
+function Combat.IsFeintSound(v) return v.Name == "Feint" and v.ClassName == "Sound" end
+function Combat.AddrOf(v) return v.Address end
+function Combat.DescendantsOf(m) return m:GetDescendants() end
+function Combat.ChildOf(inst, name) return inst:FindFirstChild(name) end
+function Combat.DeepChild(inst, name) return inst:FindFirstChild(name, true) end
+function Combat.ParentOf(inst) return inst.Parent end
+function Combat.NameOf(inst) return inst.Name end
+function Combat.PlayingOf(s) return s.IsPlaying end
+function Combat.AttrOf(inst) return inst:GetAttribute("FeintedAt") end
+
+function Combat.KeyOf(s)
+    local ok, a = pcall(Combat.AddrOf, s)
+    if ok and a ~= nil then return a end
+    return s
+end
+
+-- names from the enemy model down to the sound's parent, e.g. { "HumanoidRootPart" } (empty = directly in the model)
+function Combat.ChainFrom(model, s)
+    local names = {}
+    local okP, par = pcall(Combat.ParentOf, s)
+    local mAddr = model.Address
+    local depth = 0
+    while okP and par and depth < 12 do
+        local okA, a = pcall(Combat.AddrOf, par)
+        if okA and a == mAddr then
+            local out = {}
+            for i = #names, 1, -1 do out[#out + 1] = names[i] end
+            return out
+        end
+        local okN, n = pcall(Combat.NameOf, par)
+        if not okN then return nil end
+        names[#names + 1] = n
+        okP, par = pcall(Combat.ParentOf, par)
+        depth = depth + 1
+    end
+    return nil
+end
+
+-- remember where a Feint sound showed up so every later poll can look there directly (cheap) instead of scanning
+function Combat.Learn(chain)
+    local key = table.concat(chain, "/")
+    if Combat.PathSet[key] or #Combat.Paths >= 8 then return end
+    Combat.PathSet[key] = true
+    Combat.Paths[#Combat.Paths + 1] = chain
+end
+
+function Combat.ResolvePath(model, chain)
+    local cur = model
+    for _, n in ipairs(chain) do
+        local ok, nxt = pcall(Combat.ChildOf, cur, n)
+        if not ok or not nxt then return nil end
+        cur = nxt
+    end
+    return cur
+end
 
 function Combat.State(model)
     local okA, addr = pcall(function() return model.Address end)
@@ -1905,7 +1960,7 @@ function Combat.State(model)
     local st = Combat.hl[key]
     if not st then
         if Combat.hlCount > 300 then Combat.hl, Combat.hlCount = {}, 0 end
-        st = { present = false, at = nil, starts = {}, polledAt = -math.huge, deepAt = 0 }
+        st = { model = model, animUntil = 0, at = nil, starts = {}, polledAt = -math.huge, seen = {}, ready = false, deepAt = 0, fullAt = 0 }
         Combat.hl[key] = st
         Combat.hlCount = Combat.hlCount + 1
     end
@@ -1922,48 +1977,145 @@ function Combat.RecordStart(model, startTime)
     if #st.starts > 6 then table.remove(st.starts, 1) end
 end
 
--- is there a sound named "Feint" on this enemy right now? It normally sits under the HumanoidRootPart; the model
--- itself is checked too, plus a recursive search (slower, so only every 100ms) in case it lives somewhere else.
-function Combat.FindFeint(model, st, now)
-    local okH, hrp = pcall(ChildNamed, model, "HumanoidRootPart")
-    if okH and hrp then
-        local okS, s = pcall(ChildNamed, hrp, Combat.SOUND)
-        if okS and s then return true end
+-- "FeintedAt" attribute: its value changes whenever that player feints. It is read on the character model and on
+-- the Player object (whichever one carries it); the first value read from each is only remembered, so an old
+-- value never counts, and any later change does. Returns true when it changed since the last read.
+function Combat.CheckAttr(model, st)
+    local changed = false
+    local okM, vm = pcall(Combat.AttrOf, model)
+    if okM then
+        if st.attrModelReady and vm ~= st.attrModel then changed = true end
+        st.attrModel, st.attrModelReady = vm, true
     end
-    local okM, m = pcall(ChildNamed, model, Combat.SOUND)
-    if okM and m then return true end
-    if now >= st.deepAt then
-        st.deepAt = now + 0.1
-        local okD, d = pcall(DeepChildNamed, model, Combat.SOUND)
-        if okD and d then return true end
+    if not st.player then
+        local okN, nm = pcall(Combat.NameOf, model)
+        if okN then st.player = Players:FindFirstChild(CleanName(nm)) end
     end
-    return false
+    if st.player then
+        local okP, vp = pcall(Combat.AttrOf, st.player)
+        if okP then
+            if st.attrPlayerReady and vp ~= st.attrPlayer then changed = true end
+            st.attrPlayer, st.attrPlayerReady = vp, true
+        else
+            st.player, st.attrPlayerReady = nil, false -- player left; look it up again next time
+        end
+    end
+    return changed
 end
 
--- `at` is the moment the Feint sound appeared (rising edge only)
-function Combat.Poll(model, now)
+-- Print Feints line for a detected feint: how many of this enemy's actions are still waiting (they get cancelled)
+-- and whether one already went out.
+function Combat.LogFeint(model, st, now, via)
+    if not Get("print_feints") then return end
+    local okN, nm = pcall(Combat.NameOf, model)
+    local pend, soon = 0, nil
+    for _, q in ipairs(Queue) do
+        if Combat.State(q.model) == st then
+            pend = pend + 1
+            local d = (q.at - now) * 1000
+            if not soon or d < soon then soon = d end
+        end
+    end
+    local sinceFire = st.firedAt and (now - st.firedAt) * 1000 or nil
+    Log(string.format("Feint detected on %s (%s) | %d action(s) pending%s%s",
+        okN and DisplayName(nm) or "?", via, pend,
+        soon and string.format(", next due in %.0fms", soon) or "",
+        (sinceFire and sinceFire < 1000) and string.format(" | an action already went out %.0fms earlier (too late to cancel)", sinceFire) or ""))
+end
+
+-- The "Feint" Sound only exists for a moment, so it is caught the way a descendant scan would: every Sound named
+-- "Feint" anywhere under the enemy is remembered by address, and a Sound we haven't seen before means a feint
+-- just happened (st.at = now). Sounds that were already there the first time we looked at this enemy are only
+-- remembered, never counted, so an old leftover sound can't flag the next swing.
+-- `force` skips the 20ms throttle (FireDue polls every frame while an action is queued); several callers in the
+-- same frame share one scan.
+function Combat.Poll(model, now, force)
     local st = Combat.State(model)
-    if now - st.polledAt < 0.02 then return end -- several callers in the same frame share one check
+    if force then
+        if st.polledAt == now then return end
+    elseif now - st.polledAt < 0.02 then
+        return
+    end
     st.polledAt = now
-    local present = Combat.FindFeint(model, st, now)
-    if present and not st.present then st.at = now end
-    st.present = present
+
+    -- Three tiers, cheapest first, so a poll every frame stays fast:
+    --   1. the spots a Feint sound has been seen at before (a couple of FindFirstChild calls)
+    --   2. one native recursive FindFirstChild every 30ms
+    --   3. a full descendant scan (slow; every 100ms until a spot is learned, then every 250ms) that also learns spots
+    local found, fullDone = {}, false
+
+    for _, chain in ipairs(Combat.Paths) do
+        local parent = Combat.ResolvePath(model, chain)
+        if parent then
+            local ok, s = pcall(Combat.ChildOf, parent, Combat.SOUND)
+            if ok and s then found[Combat.KeyOf(s)] = s end
+        end
+    end
+
+    if now >= st.deepAt then
+        st.deepAt = now + 0.03
+        local ok, s = pcall(Combat.DeepChild, model, Combat.SOUND)
+        if ok and s then found[Combat.KeyOf(s)] = s end
+    end
+
+    if now >= st.fullAt then
+        st.fullAt = now + (#Combat.Paths > 0 and 0.03 or 0.02)
+        local okD, list = pcall(Combat.DescendantsOf, model)
+        if okD and type(list) == "table" then
+            fullDone = true
+            for _, v in ipairs(list) do
+                local okN, isFeint = pcall(Combat.IsFeintSound, v)
+                if okN and isFeint then found[Combat.KeyOf(v)] = v end
+            end
+        end
+    end
+
+    -- a sound is "fresh" when it is a new instance, or when an instance we already knew starts playing again
+    local fresh, freshChain = false, nil
+    for key, s in pairs(found) do
+        local okP, playing = pcall(Combat.PlayingOf, s)
+        local cur = (okP and playing == true) and 2 or 1
+        local prev = st.seen[key]
+        if prev == nil then
+            fresh = true
+            local chain = Combat.ChainFrom(model, s)
+            if chain then Combat.Learn(chain) freshChain = chain end
+        elseif prev == 1 and cur == 2 then
+            fresh = true
+        end
+        st.seen[key] = cur
+    end
+    if fullDone then
+        for k in pairs(st.seen) do
+            if not found[k] then st.seen[k] = nil end
+        end
+    end
+
+    local attrChanged = Combat.CheckAttr(model, st)
+
+    -- the very first look at an enemy only seeds what is already there, it never counts as a feint
+    if (fresh or attrChanged) and st.ready then
+        st.at = now
+        local via = (attrChanged and fresh) and "FeintedAt attribute + sound"
+            or attrChanged and "FeintedAt attribute"
+            or ("sound, under " .. (freshChain and (#freshChain > 0 and table.concat(freshChain, "/") or "model") or "?"))
+        Combat.LogFeint(model, st, now, via)
+    end
+    st.ready = true
 end
 
 -- when the Feint sound was spotted for the animation behind queue entry q, else nil.
--- Rule: the sound must have appeared after that animation started, and that animation must be the latest
--- one that had started before it ("the animation playing directly before the feint"). Animations that start
+-- Rule: the sound must have appeared after that animation started; every action of that enemy still waiting
+-- in the queue from an animation that started before the sound is cancelled. Animations that start
 -- after the sound appeared are never affected, even while it is still playing.
 function Combat.FeintAt(q)
     local st = Combat.State(q.model)
     local at = st.at
-    if not at or q.startAt >= at then return nil end
-    local target
-    for _, v in ipairs(st.starts) do
-        if v < at and (not target or v > target) then target = v end
-    end
-    if target and math.abs(target - q.startAt) < 1e-6 then return at end
-    return nil
+    if not at then return nil end
+    -- the sound has to come after the animation started (20ms of slack for the scan seeing both in the same frame);
+    -- an old sound from before this animation, or an animation that starts after the sound, is never affected
+    if at < q.startAt - 0.02 then return nil end
+    return at
 end
 
 -- should this parry action press Q instead of F? (Prioritize Dodge, or a roll of Randomize Dodge Chance)
@@ -2066,11 +2218,13 @@ actionSec:AddButton({
     end,
 })
 
+-- Every action is queued at startTime + action.t - ping comp. When Detect Feints is enabled, FireDue
+-- allows a 75ms safety window after the due time so a short-lived Feint sound appearing just after q.at
+-- can be detected before any key is sent. Detected feints still use Parry Feint Chance.
 local function Schedule(startTime, info, akey, model, id)
     local delay = 0
     local ping  = GetPingComp()
     local hold  = 0.05
-    local grace = (Get("sb_parry_feint_grace") or 0) / 1000
     local now   = os.clock()
     Combat.RecordStart(model, startTime)
 
@@ -2088,8 +2242,13 @@ local function Schedule(startTime, info, akey, model, id)
                 seenAt     = now,
                 startAt    = startTime,
                 actionT    = action.t,
-                graceUntil = at + grace,
             }
+            if Get("print_parries") then
+                local okN, nm = pcall(function() return model.Name end)
+                Log(string.format("Queued %s@%.3f | %s | %s | animation was already %.0fms in, action due in %.0fms",
+                    action.kind, action.t, okN and DisplayName(nm) or "?", AnimNameId(id),
+                    (now - startTime) * 1000, (at - now) * 1000))
+            end
         end
     end
 end
@@ -2100,31 +2259,40 @@ local function FireDue()
     local watchFeint = Get("sb_feint_detect")
     for i = #Queue, 1, -1 do
         local q = Queue[i]
-        -- A "Feint" sound spotted at any point marks the animation playing right before it as a feint. Once it is
+        -- A "Feint" sound spotted at any point marks every still-pending swing of that enemy as a feint. Once it is
         -- marked it stays marked, even if the sound is gone by the time the action comes due.
+        -- The enemy is scanned every frame for as long as it has an action queued, so the short-lived sound is caught.
         if watchFeint then
-            Combat.Poll(q.model, t)
+            Combat.Poll(q.model, t, true)
             if not q.soundFeint then
                 local at = Combat.FeintAt(q)
                 if at then q.soundFeint, q.soundAt = true, at end
             end
         end
-        if t >= q.at then
-            local feinted = q.soundFeint or not IsAnimAlive(q.model, q.id)
-            local fire, tag = false, ""
 
-            if feinted then
-                if math.random(1, 100) <= (Get("sb_parry_feint_chance") or 0) then
-                    fire, tag = true, " (feint)"
-                end
-            elseif t >= q.graceUntil then
-                fire = true
+        -- Give the short-lived Feint sound a 75ms safety window after the scheduled action time.
+        -- Without this, a sound appearing a few milliseconds after q.at can be detected only after F/Q was sent.
+        -- If the feint is detected during this window, resolve it immediately using Parry Feint Chance.
+        if t >= q.at and (not watchFeint or q.soundFeint or t >= q.at + 0.075) then
+            -- Last look immediately before sending input. Poll is forced, and the full descendant scan is now
+            -- frequent enough to catch short-lived Feint sounds during the safety window.
+            if watchFeint and not q.soundFeint then
+                Combat.Poll(q.model, os.clock(), true)
+                local at = Combat.FeintAt(q)
+                if at then q.soundFeint, q.soundAt = true, at end
+            end
+            -- fires exactly when due, no grace delay; a feint (sound or stopped animation) skips it
+            local feinted = q.soundFeint or not IsAnimAlive(q.model, q.id)
+            local fire, tag = not feinted, ""
+
+            if feinted and math.random(1, 100) <= (Get("sb_parry_feint_chance") or 0) then
+                fire, tag = true, " (feint)"
             end
 
             if feinted and Get("print_feints") then
                 local okN, nm = pcall(function() return q.model.Name end)
                 local why = q.soundFeint
-                    and string.format("Feint sound appeared %.0fms after the animation started", (q.soundAt - q.startAt) * 1000)
+                    and string.format("Feint (sound / FeintedAt) appeared %.0fms after the animation started", (q.soundAt - q.startAt) * 1000)
                     or "animation had stopped early"
                 Log(string.format("Feint (%s) | %s | %s | %s@%.3f | %s | checked %.0fms in, action was due at %.0fms | %s",
                     q.soundFeint and "sound" or "animation", okN and DisplayName(nm) or "?", AnimNameId(q.id),
@@ -2133,11 +2301,12 @@ local function FireDue()
                     fire and "acted anyway (Parry Feint Chance)" or "skipped"))
             end
 
-            if fire then Perform(q.kind, q.hold, tag, q.model, q.id, nil, { seenAt = q.seenAt, startAt = q.startAt, akey = q.owner }) end
-
-            if feinted or t >= q.graceUntil then
-                table.remove(Queue, i)
+            if fire then
+                Combat.State(q.model).firedAt = os.clock()
+                Perform(q.kind, q.hold, tag, q.model, q.id, nil, { seenAt = q.seenAt, startAt = q.startAt, akey = q.owner })
             end
+
+            table.remove(Queue, i)
         end
     end
 end
@@ -2174,6 +2343,7 @@ local function ScanStep(now)
                     local id   = anim.id
                     local info = AnimDB[id]
                     if info then
+                        Combat.State(enemy.model).animUntil = now + 0.25 -- keeps the FeintedAt watcher on this enemy
                         local akey = enemy.key .. "|" .. id
                         tracked = tracked + 1
                         seenNow[akey] = true
@@ -2561,6 +2731,32 @@ do
                 task.wait(0.05)
             else
                 task.wait(0.25)
+            end
+        end
+    end)
+end
+
+-- FEINTEDAT WATCHER
+-- Its own loop: while an enemy has an animation playing, its FeintedAt attribute is read every "Feint Check Rate"
+-- ms. A change means they feinted, so every action of theirs still waiting in the queue is cancelled (see
+-- Combat.FeintAt). It only sets a flag; it never delays or presses anything.
+do
+    task.spawn(function()
+        while Nexa:IsAlive() do
+            if cOn.Value and Get("sb_feint_detect") then
+                local now = os.clock()
+                for _, st in pairs(Combat.hl) do
+                    if st.model and now < (st.animUntil or 0) then
+                        local ok, changed = pcall(Combat.CheckAttr, st.model, st)
+                        if ok and changed then
+                            st.at = now
+                            Combat.LogFeint(st.model, st, now, "FeintedAt attribute, watcher")
+                        end
+                    end
+                end
+                task.wait((Get("sb_feint_rate") or 5) / 1000)
+            else
+                task.wait(0.1)
             end
         end
     end)
