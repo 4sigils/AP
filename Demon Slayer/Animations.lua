@@ -22,13 +22,10 @@ return {
       },
     BreathlessDagger = {
         range = 15,
-        M1 = { id = "96380214049245",  type = "parry", t = 0.4 },
-        M2 = { id = "136450851042206",  type = "parry", t = 0.4 },
-        M3 = { id = "135347279931214", type = "parry", t = 0.4 },
-        M4 = { id = "78091382689877", type = "parry", t = 0.4 },
-        Uppercut = { id = "9679911353160538", type = "parry", t = 0.4 },
-        Downslam = { id = "96799311153160538", type = "parry", t = 0.4 },
-        Aerial = { id = "74057111690611976", type = "parry", t = 0.4 },
+        M1 = { id = "96380214049245",  type = "parry", t = 0.2 },
+        M2 = { id = "136450851042206",  type = "parry", t = 0.2 },
+        M3 = { id = "135347279931214", type = "parry", t = 0.2 },
+        M4 = { id = "78091382689877", type = "parry", t = 0.2 },
     },
 
   -- // Breathings \\ --
