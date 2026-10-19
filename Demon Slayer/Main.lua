@@ -82,6 +82,27 @@ local function getNexa()
         warn(LOG_TAG .. " Nexa notification patch point not found; notifications may only show the logo while the menu is closed.")
     end
 
+    -- Input lock fix: the menu blocks the game's keyboard / mouse / camera input while the cursor is over it.
+    -- The cursor position stops updating once you leave the Roblox window, so while you are in another window
+    -- (for example clicking Eject in the executor) it still counts as "over the menu", and if the script is
+    -- ejected then, the lock is never released and you can't move or look around. Don't capture input while
+    -- the Roblox window isn't focused, so the lock is already gone by the time you eject.
+    local focusPatched, focusPatches = string.gsub(source, "local function GameCaptures%(%)", function()
+        return [[local function GameCaptures()
+        do
+            local activeFn = isrbxactive or iswindowactive or isrobloxactive
+            if type(activeFn) == "function" then
+                local okActive, active = pcall(activeFn)
+                if okActive and active == false then return false end
+            end
+        end]]
+    end, 1)
+    if focusPatches > 0 then
+        source = focusPatched
+    else
+        warn(LOG_TAG .. " Nexa input patch point not found; the menu may keep game input locked after an eject.")
+    end
+
     local chunk, compileError = loadstring(source)
     if not chunk then error(LOG_TAG .. " Nexa failed to compile: " .. tostring(compileError)) end
 
@@ -1035,47 +1056,8 @@ do
     generalToggle:OnChanged(function(v) rangeSlider:SetEnabled(v and true or false) end)
 end
 
-local feintSec = mainTab:AddSection("Feints", "Handling for canceled swings.", { Column = "right" })
-Reg("sb_parry_feint_chance", feintSec:AddSlider({
-    Title = "Parry Feint Chance",
-    Tooltip = "Chance to still act when a swing gets canceled early (a feint)",
-    Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
-    ConfigKey = "demonslayer.parry.feintChance",
-}))
-Reg("sb_feint_highlight", feintSec:AddToggle({
-    Title = "Detect Highlight Feints",
-    Tooltip = "A child named \"Highlight\" under the enemy in workspace.Alive means they are feinting: the action is skipped (unless Parry Feint Chance rolls).",
-    Default = true,
-    ConfigKey = "demonslayer.parry.feintHighlight",
-}))
-Reg("sb_parry_feint_grace", feintSec:AddSlider({
-    Title = "Feint Grace",
-    Tooltip = "How long after the normal moment to keep watching for a late feint before committing",
-    Min = 0, Max = 300, Step = 5, Default = 100, Suffix = "ms",
-    ConfigKey = "demonslayer.parry.feintGrace",
-}))
-
--- DODGING (own section)
-local dodgeSec = mainTab:AddSection("Dodging", "Press Q (dodge) instead of F (parry).", { Column = "right" })
-do
-    local prioToggle = Reg("sb_dodge_priority", dodgeSec:AddToggle({
-        Title = "Prioritize Dodge",
-        Tooltip = "Every parry action presses Q (dodge) instead of F. Actions marked as dodge in the data file always press Q.",
-        Default = false,
-        ConfigKey = "demonslayer.dodge.priority",
-    }))
-    local chanceSlider = Reg("sb_dodge_chance", dodgeSec:AddSlider({
-        Title = "Randomize Dodge Chance",
-        Tooltip = "Chance for each parry action to press Q (dodge) instead of F. 0 = never. Ignored while Prioritize Dodge is on.",
-        Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
-        ConfigKey = "demonslayer.dodge.chance",
-    }))
-    chanceSlider:SetEnabled(not prioToggle.Value)
-    prioToggle:OnChanged(function(v) chanceSlider:SetEnabled(not v) end)
-end
-
--- PING COMP (own section)
-local pingSec = mainTab:AddSection("Ping Compensation", "Fires actions earlier to cover your latency.", { Column = "right" })
+-- PING COMP (own section, directly under the main Auto Parry section)
+local pingSec = mainTab:AddSection("Ping Compensation", "Fires actions earlier to cover your latency.", { Column = "left" })
 do
     local autoPingToggle = Reg("sb_t_autoping", pingSec:AddToggle({
         Title = "Auto Ping Comp",
@@ -1091,6 +1073,51 @@ do
     }))
     pingSlider:SetEnabled(not autoPingToggle.Value)
     autoPingToggle:OnChanged(function(v) pingSlider:SetEnabled(not v) end)
+end
+
+local feintSec = mainTab:AddSection("Feints", "Handling for canceled swings.", { Column = "right" })
+Reg("sb_feint_detect", feintSec:AddToggle({
+    Title = "Detect Feints",
+    Tooltip = "A sound named \"Feint\" appearing on the enemy means they feinted: the animation that was playing right before it is not parried (unless Parry Feint Chance rolls). Animations that start after the sound appeared are unaffected. A swing that stops early is still treated as a feint either way.",
+    Default = true,
+    ConfigKey = "demonslayer.parry.feintDetect",
+}))
+Reg("sb_parry_feint_chance", feintSec:AddSlider({
+    Title = "Parry Feint Chance",
+    Tooltip = "Chance to still act when a swing gets canceled early (a feint)",
+    Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
+    ConfigKey = "demonslayer.parry.feintChance",
+}))
+Reg("sb_parry_feint_grace", feintSec:AddSlider({
+    Title = "Feint Grace",
+    Tooltip = "How long after the normal moment to keep watching for a late feint before committing",
+    Min = 0, Max = 300, Step = 5, Default = 100, Suffix = "ms",
+    ConfigKey = "demonslayer.parry.feintGrace",
+}))
+
+-- DODGING (own section)
+local dodgeSec = mainTab:AddSection("Dodging", "Press Q (dodge) instead of F (parry), with a cooldown between dodges.", { Column = "right" })
+do
+    local prioToggle = Reg("sb_dodge_priority", dodgeSec:AddToggle({
+        Title = "Prioritize Dodge",
+        Tooltip = "Every parry action presses Q (dodge) instead of F. Actions marked as dodge in the data file always press Q.",
+        Default = false,
+        ConfigKey = "demonslayer.dodge.priority",
+    }))
+    local chanceSlider = Reg("sb_dodge_chance", dodgeSec:AddSlider({
+        Title = "Randomize Dodge Chance",
+        Tooltip = "Chance for each parry action to press Q (dodge) instead of F. 0 = never. Ignored while Prioritize Dodge is on.",
+        Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
+        ConfigKey = "demonslayer.dodge.chance",
+    }))
+    Reg("sb_dodge_cooldown", dodgeSec:AddSlider({
+        Title = "Dodge Cooldown",
+        Tooltip = "After a dodge (Q) goes out, any dodge inside this window parries (F) instead. 0 = no cooldown.",
+        Min = 0, Max = 5000, Step = 50, Default = 1500, Suffix = "ms",
+        ConfigKey = "demonslayer.dodge.cooldown",
+    }))
+    chanceSlider:SetEnabled(not prioToggle.Value)
+    prioToggle:OnChanged(function(v) chanceSlider:SetEnabled(not v) end)
 end
 
 end
@@ -1740,7 +1767,7 @@ Reg("debug_hits", actionSec:AddToggle({
 
 Reg("print_feints", actionSec:AddToggle({
     Title = "Print Feints",
-    Tooltip = "Prints every action the auto-parry skips because of a feint: the enemy, the animation, what gave the feint away (Highlight or the animation stopping early), when it was spotted, and whether the Parry Feint Chance made it act anyway.",
+    Tooltip = "Prints every action the auto-parry skips because of a feint: the enemy, the animation, what gave the feint away (the Feint sound or the animation stopping early), when it was spotted, and whether the Parry Feint Chance made it act anyway.",
     Default = false,
 }))
 
@@ -1864,6 +1891,81 @@ local function KeyName(vk)
     return vk == KEY_PARRY and "F" or vk == KEY_DODGE and "Q" or vk == KEY_JUMP and "Space" or "?"
 end
 
+-- Combat state kept in one table (the script is close to Lua's limit of local variables):
+--   lastDodge : os.clock() of the last dodge (Q) that went out, for the Dodge Cooldown
+--   hl[model] : per-enemy feint-sound tracking { present, at = when the sound appeared, starts = recent animation start times }
+local Combat = { lastDodge = -math.huge, hl = {}, hlCount = 0, SOUND = "Feint" }
+
+local function ChildNamed(inst, name) return inst:FindFirstChild(name) end
+local function DeepChildNamed(inst, name) return inst:FindFirstChild(name, true) end
+
+function Combat.State(model)
+    local okA, addr = pcall(function() return model.Address end)
+    local key = (okA and addr) or model
+    local st = Combat.hl[key]
+    if not st then
+        if Combat.hlCount > 300 then Combat.hl, Combat.hlCount = {}, 0 end
+        st = { present = false, at = nil, starts = {}, polledAt = -math.huge, deepAt = 0 }
+        Combat.hl[key] = st
+        Combat.hlCount = Combat.hlCount + 1
+    end
+    return st
+end
+
+-- remember when an animation of this enemy started, so a feint sound can be tied to the one playing right before it
+function Combat.RecordStart(model, startTime)
+    local st = Combat.State(model)
+    for _, v in ipairs(st.starts) do
+        if math.abs(v - startTime) < 1e-6 then return end
+    end
+    st.starts[#st.starts + 1] = startTime
+    if #st.starts > 6 then table.remove(st.starts, 1) end
+end
+
+-- is there a sound named "Feint" on this enemy right now? It normally sits under the HumanoidRootPart; the model
+-- itself is checked too, plus a recursive search (slower, so only every 100ms) in case it lives somewhere else.
+function Combat.FindFeint(model, st, now)
+    local okH, hrp = pcall(ChildNamed, model, "HumanoidRootPart")
+    if okH and hrp then
+        local okS, s = pcall(ChildNamed, hrp, Combat.SOUND)
+        if okS and s then return true end
+    end
+    local okM, m = pcall(ChildNamed, model, Combat.SOUND)
+    if okM and m then return true end
+    if now >= st.deepAt then
+        st.deepAt = now + 0.1
+        local okD, d = pcall(DeepChildNamed, model, Combat.SOUND)
+        if okD and d then return true end
+    end
+    return false
+end
+
+-- `at` is the moment the Feint sound appeared (rising edge only)
+function Combat.Poll(model, now)
+    local st = Combat.State(model)
+    if now - st.polledAt < 0.02 then return end -- several callers in the same frame share one check
+    st.polledAt = now
+    local present = Combat.FindFeint(model, st, now)
+    if present and not st.present then st.at = now end
+    st.present = present
+end
+
+-- when the Feint sound was spotted for the animation behind queue entry q, else nil.
+-- Rule: the sound must have appeared after that animation started, and that animation must be the latest
+-- one that had started before it ("the animation playing directly before the feint"). Animations that start
+-- after the sound appeared are never affected, even while it is still playing.
+function Combat.FeintAt(q)
+    local st = Combat.State(q.model)
+    local at = st.at
+    if not at or q.startAt >= at then return nil end
+    local target
+    for _, v in ipairs(st.starts) do
+        if v < at and (not target or v > target) then target = v end
+    end
+    if target and math.abs(target - q.startAt) < 1e-6 then return at end
+    return nil
+end
+
 -- should this parry action press Q instead of F? (Prioritize Dodge, or a roll of Randomize Dodge Chance)
 local function ShouldDodge()
     if Get("sb_dodge_priority") then return true end
@@ -1873,9 +1975,22 @@ end
 
 -- report(stage, configuredMs) is optional: the Test buttons use it to show every step of the sequence
 local function Perform(kind, hold, tag, model, id, report, meta)
+    local isTest = meta and meta.test
+    local swapped = false
     if kind == "parry" and ShouldDodge() then
-        kind = "dodge"
-        tag = tag .. " (parry swapped to dodge)"
+        kind, swapped = "dodge", true
+    end
+    if kind == "dodge" or kind == "unparryable" then
+        local cooldown = (Get("sb_dodge_cooldown") or 1500) / 1000
+        local now = os.clock()
+        if not isTest and cooldown > 0 and now - Combat.lastDodge < cooldown then
+            -- dodged too recently: parry (F) until the cooldown is over
+            kind = "parry"
+            tag = tag .. string.format(" (dodge on cooldown, %.0fms left, parrying)", (cooldown - (now - Combat.lastDodge)) * 1000)
+        else
+            if not isTest then Combat.lastDodge = now end
+            if swapped then tag = tag .. " (parry swapped to dodge)" end
+        end
     end
     local vk, h = ActionKey(kind, hold)
     PressKey(vk, h)
@@ -1917,7 +2032,7 @@ do
                     Perform(kind, 0.05, " (test)", { Name = "Test" }, "test", function(stage)
                         Log("Test: " .. stage)
                         Nexa:Notify({ Title = title, Content = stage, Type = "info", Duration = 3 })
-                    end)
+                    end, { test = true })
                     task.wait(0.4)
                 end
                 testBusy = false
@@ -1927,12 +2042,37 @@ do
     TestAction("Test Dodge", "dodge")
 end
 
+-- UNLOAD: fully destroys the script. Nexa:Destroy() ends every loop (they all run `while Nexa:IsAlive()`),
+-- removes all drawings, releases the held keys (see OnDestroy below) and gives the game its input back. The
+-- exported globals are cleared too so nothing keeps a reference to the dead library.
+actionSec:AddButton({
+    Title = "",
+    ButtonText = "Unload Script",
+    Variant = "danger",
+    Expand = true,
+    Callback = function()
+        task.spawn(function()
+            pcall(function() Nexa:Destroy() end)
+            if type(setrobloxinput) == "function" then pcall(setrobloxinput, true) end
+            pcall(function()
+                local env = type(getgenv) == "function" and getgenv() or nil
+                for _, k in ipairs({ "Nexa", "UI", "DrawingUI" }) do
+                    if env and env[k] == Nexa then env[k] = nil end
+                    if rawget(_G, k) == Nexa then _G[k] = nil end
+                    if type(shared) == "table" and shared[k] == Nexa then shared[k] = nil end
+                end
+            end)
+        end)
+    end,
+})
+
 local function Schedule(startTime, info, akey, model, id)
     local delay = 0
     local ping  = GetPingComp()
     local hold  = 0.05
     local grace = (Get("sb_parry_feint_grace") or 0) / 1000
     local now   = os.clock()
+    Combat.RecordStart(model, startTime)
 
     for _, action in ipairs(info.actions) do
         local base = startTime + action.t
@@ -1957,16 +2097,20 @@ end
 local function FireDue()
     if #Queue == 0 then return end
     local t = os.clock()
-    local watchHighlight = Get("sb_feint_highlight")
+    local watchFeint = Get("sb_feint_detect")
     for i = #Queue, 1, -1 do
         local q = Queue[i]
-        -- a "Highlight" under the enemy marks a feint; remember it even if it disappears before we fire
-        if watchHighlight and not q.highlighted then
-            local okH, h = pcall(function() return q.model:FindFirstChild("Highlight") end)
-            if okH and h then q.highlighted, q.highlightAt = true, t end
+        -- A "Feint" sound spotted at any point marks the animation playing right before it as a feint. Once it is
+        -- marked it stays marked, even if the sound is gone by the time the action comes due.
+        if watchFeint then
+            Combat.Poll(q.model, t)
+            if not q.soundFeint then
+                local at = Combat.FeintAt(q)
+                if at then q.soundFeint, q.soundAt = true, at end
+            end
         end
         if t >= q.at then
-            local feinted = q.highlighted or not IsAnimAlive(q.model, q.id)
+            local feinted = q.soundFeint or not IsAnimAlive(q.model, q.id)
             local fire, tag = false, ""
 
             if feinted then
@@ -1979,11 +2123,11 @@ local function FireDue()
 
             if feinted and Get("print_feints") then
                 local okN, nm = pcall(function() return q.model.Name end)
-                local why = q.highlighted
-                    and string.format("Highlight appeared %.0fms after the animation started", (q.highlightAt - q.startAt) * 1000)
+                local why = q.soundFeint
+                    and string.format("Feint sound appeared %.0fms after the animation started", (q.soundAt - q.startAt) * 1000)
                     or "animation had stopped early"
                 Log(string.format("Feint (%s) | %s | %s | %s@%.3f | %s | checked %.0fms in, action was due at %.0fms | %s",
-                    q.highlighted and "Highlight" or "animation", okN and DisplayName(nm) or "?", AnimNameId(q.id),
+                    q.soundFeint and "sound" or "animation", okN and DisplayName(nm) or "?", AnimNameId(q.id),
                     q.kind, q.actionT or 0, why,
                     (t - q.startAt) * 1000, (q.at - q.startAt) * 1000,
                     fire and "acted anyway (Parry Feint Chance)" or "skipped"))
@@ -2013,6 +2157,7 @@ local function ScanStep(now)
     local nearRange = (useGeneral and generalRange or math.max(AnimMaxRange, DEFAULT_ANIM_RANGE)) * 1.5
     local seenNow, tracked = {}, 0
     local skipFaction = (not cSameFaction.Value) and MyFaction or nil
+    local watchFeint = Get("sb_feint_detect")
 
     for _, enemy in ipairs(Enemies) do
         if ((enemy.isPlayer and doPlayers) or (not enemy.isPlayer and doNpcs))
@@ -2024,6 +2169,7 @@ local function ScanStep(now)
             if dist > nearRange then
                 enemy.skipUntil = now + 0.3
             else
+                if watchFeint then Combat.Poll(enemy.model, now) end
                 for _, anim in ipairs(GetPlayingAnims(enemy)) do
                     local id   = anim.id
                     local info = AnimDB[id]
@@ -2441,6 +2587,8 @@ Nexa:OnDestroy(function()
     for _, r in ipairs(Releases) do pcall(keyrelease, r.vk) end
     Releases = {}
     Queue, Active, Tracked, TrackedCount = {}, {}, {}, 0
+    -- never leave the game's input blocked after the script is gone
+    if type(setrobloxinput) == "function" then pcall(setrobloxinput, true) end
 end)
 
 task.spawn(function()
@@ -2448,7 +2596,7 @@ task.spawn(function()
 
     while Nexa:IsAlive() do
         local now = os.clock()
-        eee-- nothing to scan, track or release: sleep longer instead of spinning every frame
+        -- nothing to scan, track or release: sleep longer instead of spinning every frame
         local idle = not cOn.Value and TrackedCount == 0 and #Releases == 0
         if not idle then
             Status.loopMs = Status.loopMs * 0.8 + (now - lastLoop) * 1000 * 0.2
