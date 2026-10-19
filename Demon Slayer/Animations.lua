@@ -70,7 +70,7 @@ return {
         TripleStrike = { id = "102384282811717",  type = "parry", t = 0.5 },
         DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.28 },
         Sever = { id = "104727243018430", type = "parry", t = 1, range = 40 },
-        PhantomRend = { id = "79199587090357", type = "parry", t = 0.475, range = 35 },
+        PhantomRend = { id = "79199587090357", type = "parry", t = 0.42, range = 35 },
     },
 
   
