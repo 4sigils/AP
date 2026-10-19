@@ -31,9 +31,9 @@ return {
   -- // Breathings \\ --
     Breathless = {
         range = 15,
-        Shoot = { id = "97234658067281",  type = "parry", t = 0.4 },
+        Shoot = { id = "97234658067281",  type = "parry", t = 0.25 },
         HeavyStrikes = { id = "132302084951226",  type = "parry", t = 0.4, 0.8 },
-        Cleave = { id = "128316092974532", type = "parry", t = 0.4 },
+        Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
         BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
     },
 
