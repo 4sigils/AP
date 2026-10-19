@@ -8,7 +8,7 @@ return {
         M4 = { id = "128754342991229", type = "parry", t = 0.4 },
         Uppercut = { id = "96799353160538", type = "parry", t = 0.4 },
         Downslam = { id = "96799353160538", type = "parry", t = 0.4 },
-        Aerial = { id = "74057690611976", type = "parry", t = 0.4, range = 30 },
+        Aerial = { id = "74057690611976", type = "parry", t = 0.175, range = 30 },
     },
     Fist = {
         range = 20,
@@ -57,8 +57,8 @@ return {
         WaterWheel = { id = "134966259622380",  type = "parry", t = 0.4 },
         Mopped = { id = "104404186432785",  type = "parry", t = 0.3,},
         WaterBasin = { id = "117098193437240", type = "parry", t = 0.65 },
-        RiptideCrash = { id = "118847875510115", type = "parry", t = 0.6 },
-        ConstantFlux = { id = "128329834173776", type = "parry", t = 0.3 },
+        RiptideCrash = { id = "118847875510115", type = "parry", t = 0.585 },
+        ConstantFlux = { id = "128329834173776", type = "parry", t = 0.28 },
     },
 
   -- // Blood Demon Arts \\ --
