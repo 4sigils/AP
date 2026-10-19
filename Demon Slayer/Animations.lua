@@ -33,7 +33,7 @@ return {
         M4 = { id = "91593872086921", type = "parry", t = 0.225 },
         Crit = { id = "130992362117184", type = "parry", t = 0.4 },
         Uppercut = { id = "119549866823092", type = "parry", t = 0.2 },
-        Aerial = { id = "71524717919235", type = "parry", t = 0.05, range = 30 },
+        Aerial = { id = "71524717919235", type = "parry", t = 0.175, range = 30 },
       },
     BreathlessDagger = {
         range = 20,
@@ -51,12 +51,14 @@ return {
         Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
         BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
     },
+
     Water = {
         range = 20,
-        Shoot = { id = "97234658067281",  type = "parry", t = 0.25 },
-        HeavyStrikes = { id = "132302084951226",  type = "parry", t = 0.4,},
-        Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
-        BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
+        WaterWheel = { id = "134966259622380",  type = "parry", t = 0.4 },
+        Mopped = { id = "104404186432785",  type = "parry", t = 0.4,},
+        WaterBasin = { id = "117098193437240", type = "parry", t = 0.4 },
+        RiptideCrash = { id = "118847875510115", type = "parry", t = 0.4 },
+        ConstantFlux = { id = "123975919701040", type = "parry", t = 0.4 },
     },
 
   -- // Blood Demon Arts \\ --
@@ -66,7 +68,7 @@ return {
     Slayers = {
         range = 20,
         TripleStrike = { id = "102384282811717",  type = "parry", t = 0.5 },
-        DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.25 },
+        DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.28 },
         Sever = { id = "104727243018430", type = "parry", t = 1, range = 40 },
         PhantomRend = { id = "79199587090357", type = "parry", t = 0.475, range = 35 },
     },
