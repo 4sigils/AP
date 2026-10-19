@@ -12,10 +12,10 @@ return {
     },
     Fist = {
         range = 20,
-        M1 = { id = "125094062025381",  type = "parry", t = 0.2 },
-        M2 = { id = "109885476706150",  type = "parry", t = 0.2 },
-        M3 = { id = "77151462184045", type = "parry", t = 0.2 },
-        M4 = { id = "134599650345242", type = "parry", t = 0.2 },
+        M1 = { id = "125094062025381",  type = "parry", t = 0.15 },
+        M2 = { id = "109885476706150",  type = "parry", t = 0.15 },
+        M3 = { id = "77151462184045", type = "parry", t = 0.15 },
+        M4 = { id = "134599650345242", type = "parry", t = 0.15 },
         Crit = { id = "71289364417188", type = "parry", t = 0.4 },
     },
     Spear = {
@@ -55,14 +55,14 @@ return {
 
   -- // Blood Demon Arts \\ --
 
-
+  
   -- // Skills \\ --
     Slayers = {
         range = 20,
-        ABC = { id = "555",  type = "parry", t = 0.25 },
-        DEF = { id = "555",  type = "parry", t = 0.4,},
-        GHI = { id = "555", type = "parry", t = 0.2 },
-        JKL = { id = "555", type = "parry", t = 0.4 },
+        TripleStrike = { id = "102384282811717",  type = "parry", t = 0.3 },
+        Sever = { id = "104727243018430",  type = "parry", t = 0.4,},
+        DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.2 },
+        PhantomRend = { id = "79199587090357", type = "parry", t = 0.45 },
     },
 
   
