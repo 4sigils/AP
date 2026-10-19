@@ -55,10 +55,10 @@ return {
     Water = {
         range = 20,
         WaterWheel = { id = "134966259622380",  type = "parry", t = 0.4 },
-        Mopped = { id = "104404186432785",  type = "parry", t = 0.4,},
-        WaterBasin = { id = "117098193437240", type = "parry", t = 0.4 },
-        RiptideCrash = { id = "118847875510115", type = "parry", t = 0.4 },
-        ConstantFlux = { id = "123975919701040", type = "parry", t = 0.4 },
+        Mopped = { id = "104404186432785",  type = "parry", t = 0.375,},
+        WaterBasin = { id = "117098193437240", type = "parry", t = 0.725 },
+        RiptideCrash = { id = "118847875510115", type = "parry", t = 0.6 },
+        ConstantFlux = { id = "128329834173776", type = "parry", t = 0.4 },
     },
 
   -- // Blood Demon Arts \\ --
