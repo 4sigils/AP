@@ -12,7 +12,7 @@ local BG_IMG   = "\137\080\078\071\013\010\026\010\000\000\000\013\073\072\068\0
 local KEY_PARRY  = 0x46 -- F
 local KEY_DODGE  = 0x51 -- Q
 local KEY_JUMP   = 0x20 -- Space
-local KEY_CROUCH = 0xA2 -- Left Ctrl
+local KEY_E      = 0x45 -- E
 
 -- All animation timings in the data file are tuned for roughly this ping (ms).
 local BASE_PING = 60
@@ -179,12 +179,15 @@ local function GetAnimatorAddr(model)
     return addr
 end
 
-local function GuildAttr(m) return m:GetAttribute("Guild") end
-local function GetGuild(model)
-    local ok, g = pcall(GuildAttr, model)
-    if ok and type(g) == "string" and g ~= "" then return g end
+local function FactionAttr(m) return m:GetAttribute("Faction") end
+-- "Slayer" / "Demon" from a character model's Faction attribute, nil if it has none
+local function GetFaction(model)
+    local ok, f = pcall(FactionAttr, model)
+    if ok and type(f) == "string" and f ~= "" then return f end
     return nil
 end
+
+local MyFaction = nil -- the local player's Faction attribute, refreshed with the enemy list
 
 local Enemies, NextRefresh = {}, 0
 local EnemyCache = {}
@@ -204,7 +207,7 @@ local function BuildEntry(model)
         animator = animator,
         isPlayer = Players:FindFirstChild(name) ~= nil,
         skipUntil = 0,
-        guildAt = 0,
+        factionAt = 0,
     }
 end
 
@@ -217,6 +220,9 @@ local function RefreshEnemies(now)
     if not live then Enemies, EnemyCache = list, nextCache return end
 
     local myName = lp and lp.Name
+    local me = (myName and live:FindFirstChild(myName)) or (lp and lp.Character)
+    MyFaction = me and GetFaction(me) or nil
+
     for _, model in ipairs(live:GetChildren()) do
         local addr = model.Address
         local cached = EnemyCache[addr]
@@ -226,11 +232,10 @@ local function RefreshEnemies(now)
             local entry = (cached and not cached.dead and not cached.stale) and cached or BuildEntry(model)
             if entry then
                 nextCache[addr] = entry
-                -- guilds rarely change, so only re-read them every few seconds
-                if entry.isPlayer and now >= entry.guildAt then
-                    entry.guildAt = now + 5
-                    local plr = Players:FindFirstChild(entry.name)
-                    entry.guild = plr and GetGuild(plr) or nil
+                -- factions rarely change, so only re-read them every couple of seconds
+                if entry.isPlayer and now >= entry.factionAt then
+                    entry.factionAt = now + 2
+                    entry.faction = GetFaction(model)
                 end
                 if entry.name ~= myName then list[#list + 1] = entry end
             else
@@ -464,7 +469,7 @@ end
 
 -- ANIMATION DATA
 -- Entry formats: number | { t1, t2 } | { type = "parry", t = {..}, unparryable = true } | { { type = "jump", t = 0.4 }, ... }
--- types: parry, dodge (dodge-only, always Q), unparryable (Q, or F with "Parry Unparryables"), jump, crouch
+-- types: parry (F, or Q when the Dodging options swap it), dodge (always Q), unparryable (Q), jump
 -- Moves can also be grouped and named: Claws = { M1 = { id = 123, type = "parry", t = 0.4 }, M2 = { ... } }
 -- (see Flatten below for every supported layout; a group's `range` is the default for its moves)
 -- Base distance (studs) per animation: add `range = 15` (or `distance` / `dist`) to the entry, e.g.
@@ -590,7 +595,10 @@ local function Normalize(v)
         elseif type(t) == "number" then
             local k = string.lower(tostring(kind))
             if unparryable and k ~= "dodge" then k = "unparryable" end
-            actions[#actions + 1] = {kind = k, t = t}
+            -- crouch actions are no longer supported (there is no uncrouch step any more)
+            if k ~= "crouch" then
+                actions[#actions + 1] = {kind = k, t = t}
+            end
         end
     end
 
@@ -865,34 +873,6 @@ local function RebuildFriendsLower()
 end
 RebuildFriendsLower()
 
-local GUILDS_FILE = "DemonSlayer_ExcludedGuilds.json"
-local IgnoredGuilds = {}
-
-local function LoadIgnoredGuilds()
-    if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
-    local ok, raw = pcall(function()
-        if isfile(GUILDS_FILE) then return readfile(GUILDS_FILE) end
-    end)
-    if not ok or type(raw) ~= "string" or raw == "" then return end
-    local good, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
-    if good and type(decoded) == "table" then
-        IgnoredGuilds = {}
-        for _, name in ipairs(decoded) do
-            if type(name) == "string" then IgnoredGuilds[name] = true end
-        end
-    end
-end
-
-local function SaveIgnoredGuilds()
-    if type(writefile) ~= "function" then return end
-    local names = {}
-    for name in pairs(IgnoredGuilds) do names[#names + 1] = name end
-    table.sort(names)
-    pcall(function() writefile(GUILDS_FILE, HttpService:JSONEncode(names)) end)
-end
-
-LoadIgnoredGuilds()
-
 -- WHITELISTS TAB: FRIENDS
 do
 local friendsSec = whitelistTab:AddSection("Friends", "Selected players will never be tracked by auto-parry.", { Column = "left" })
@@ -966,76 +946,45 @@ friendsSec:AddButton({
 
 end
 
--- WHITELISTS TAB: GUILDS
+-- WHITELISTS TAB: FACTION
 do
-local guildSec = whitelistTab:AddSection("Guild", "Members of selected guilds will never be tracked by auto-parry.", { Column = "right" })
-local guildDropdown
-local yourGuildStatus = guildSec:AddStatus({ Title = "Your guild", Default = "-", Tone = "muted" })
+local factionSec = whitelistTab:AddSection("Faction", "Skip players on your own faction (Slayer / Demon).", { Column = "right" })
+local yourFactionStatus = factionSec:AddStatus({ Title = "Your faction", Default = "-", Tone = "muted" })
 
-local function GetGuildNames()
-    local found, names = {}, {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        local g = GetGuild(player)
-        if g then found[g] = true end
-    end
-    for name in pairs(IgnoredGuilds) do found[name] = true end
-    for name in pairs(found) do names[#names + 1] = name end
-    table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
-    return names
-end
-
-local function RefreshGuildDropdown()
-    local options = GetGuildNames()
-    if #options == 0 then options = {"No guilds found"} end
-
+local function ReadMyFaction()
     local lp = Players.LocalPlayer
-    local myGuild = lp and GetGuild(lp)
-    pcall(function() yourGuildStatus:SetValue(myGuild or "-", myGuild and "accent" or "muted") end)
-
-    if guildDropdown then
-        guildDropdown.Options = options
-        guildDropdown._listScroll = 0
-        guildDropdown._listScrollTo = 0
-        local selected = {}
-        for _, option in ipairs(options) do
-            if IgnoredGuilds[option] then selected[#selected + 1] = option end
-        end
-        pcall(function() guildDropdown:SetValue(selected, true) end)
-    end
+    local alive = workspace:FindFirstChild("Alive")
+    local me = (lp and alive and alive:FindFirstChild(lp.Name)) or (lp and lp.Character)
+    return me and GetFaction(me) or nil
 end
 
-do
-    local initial = GetGuildNames()
-    local defaults = {}
-    for name in pairs(IgnoredGuilds) do defaults[#defaults + 1] = name end
-    guildDropdown = guildSec:AddDropdown({
-        Title = "Whitelisted guilds",
-        Description = "Multi-select guilds to ignore.",
-        Options = (#initial > 0 and initial or {"No guilds found"}),
-        Default = defaults,
-        Multi = true,
-        VisibleRows = 8,
-        ConfigKey = "demonslayer.guild.excluded",
-        Callback = function(value)
-            if type(value) ~= "table" then return end
-            IgnoredGuilds = {}
-            for _, name in ipairs(value) do
-                if type(name) == "string" and name ~= "No guilds found" then
-                    IgnoredGuilds[name] = true
-                end
-            end
-            SaveIgnoredGuilds()
-        end,
-    })
+local function ShowMyFaction()
+    local f = ReadMyFaction()
+    pcall(function() yourFactionStatus:SetValue(f or "-", f and "accent" or "muted") end)
+    return f
 end
-guildSec:AddButton({
+
+Reg("sb_parry_same_faction", factionSec:AddToggle({
+    Title = "Parry Same Faction",
+    Tooltip = "Off (default): players whose Faction attribute matches yours are ignored by auto parry. On: they are parried like anyone else.",
+    Default = false,
+    ConfigKey = "demonslayer.parry.sameFaction",
+}))
+factionSec:AddButton({
     Title = "",
-    ButtonText = "Scan guilds",
+    ButtonText = "Check my faction",
     Variant = "primary",
     Expand = true,
-    Callback = RefreshGuildDropdown,
+    Callback = function()
+        local f = ShowMyFaction()
+        Nexa:Notify({
+            Title = "Faction",
+            Content = f and ("You are: " .. f) or "No Faction attribute found on your character.",
+            Type = f and "success" or "warning", Duration = 3,
+        })
+    end,
 })
-RefreshGuildDropdown()
+ShowMyFaction()
 end
 
 -- AUTO PARRY TAB
@@ -1054,12 +1003,6 @@ enabledToggle:AddKeybind({
     ConfigKey = "demonslayer.parry.enabled.bind",
     OnPressed = function() enabledToggle:SetValue(not enabledToggle:GetValue()) end,
 })
-Reg("auto_roll_cancel", parrySec:AddToggle({
-    Title = "Auto Roll Cancel",
-    Tooltip = "Right-clicks a short time after every dodge (Q) goes out to cancel the roll. Uses Roll Cancel Timing.",
-    Default = false,
-    ConfigKey = "demonslayer.parry.autoRollCancel",
-}))
 Reg("sb_parry_players", parrySec:AddToggle({
     Title = "Auto Parry Players",
     Default = true,
@@ -1069,12 +1012,6 @@ Reg("sb_parry_npcs", parrySec:AddToggle({
     Title = "Auto Parry NPCs",
     Default = true,
     ConfigKey = "demonslayer.parry.npcs",
-}))
-Reg("sb_parry_unparryables", parrySec:AddToggle({
-    Title = "Parry Unparryables",
-    Tooltip = "Unparryable actions press F (parry) instead of Q (for armor that allows it). Dodge-only actions always press Q.",
-    Default = false,
-    ConfigKey = "demonslayer.parry.unparryables",
 }))
 Reg("sb_parry_chance", parrySec:AddSlider({
     Title = "Parry Chance",
@@ -1097,18 +1034,6 @@ do
     rangeSlider:SetEnabled(generalToggle.Value and true or false)
     generalToggle:OnChanged(function(v) rangeSlider:SetEnabled(v and true or false) end)
 end
-Reg("sb_t_uncrouch", parrySec:AddSlider({
-    Title = "Uncrouch Timing",
-    Tooltip = "Crouch is a toggle: how long after crouching it presses the key again to stand up",
-    Min = 0, Max = 2000, Step = 10, Default = 500, Suffix = "ms",
-    ConfigKey = "demonslayer.timing.uncrouch",
-}))
-Reg("sb_t_rollcancel", parrySec:AddSlider({
-    Title = "Roll Cancel Timing",
-    Tooltip = "How long after a dodge (Q) it waits before right-clicking to roll cancel. Only used while Auto Roll Cancel is on.",
-    Min = 0, Max = 1000, Step = 5, Default = 100, Suffix = "ms",
-    ConfigKey = "demonslayer.timing.rollCancel",
-}))
 
 local feintSec = mainTab:AddSection("Feints", "Handling for canceled swings.", { Column = "right" })
 Reg("sb_parry_feint_chance", feintSec:AddSlider({
@@ -1117,12 +1042,37 @@ Reg("sb_parry_feint_chance", feintSec:AddSlider({
     Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
     ConfigKey = "demonslayer.parry.feintChance",
 }))
+Reg("sb_feint_highlight", feintSec:AddToggle({
+    Title = "Detect Highlight Feints",
+    Tooltip = "A child named \"Highlight\" under the enemy in workspace.Alive means they are feinting: the action is skipped (unless Parry Feint Chance rolls).",
+    Default = true,
+    ConfigKey = "demonslayer.parry.feintHighlight",
+}))
 Reg("sb_parry_feint_grace", feintSec:AddSlider({
     Title = "Feint Grace",
     Tooltip = "How long after the normal moment to keep watching for a late feint before committing",
     Min = 0, Max = 300, Step = 5, Default = 100, Suffix = "ms",
     ConfigKey = "demonslayer.parry.feintGrace",
 }))
+
+-- DODGING (own section)
+local dodgeSec = mainTab:AddSection("Dodging", "Press Q (dodge) instead of F (parry).", { Column = "right" })
+do
+    local prioToggle = Reg("sb_dodge_priority", dodgeSec:AddToggle({
+        Title = "Prioritize Dodge",
+        Tooltip = "Every parry action presses Q (dodge) instead of F. Actions marked as dodge in the data file always press Q.",
+        Default = false,
+        ConfigKey = "demonslayer.dodge.priority",
+    }))
+    local chanceSlider = Reg("sb_dodge_chance", dodgeSec:AddSlider({
+        Title = "Randomize Dodge Chance",
+        Tooltip = "Chance for each parry action to press Q (dodge) instead of F. 0 = never. Ignored while Prioritize Dodge is on.",
+        Min = 0, Max = 100, Step = 1, Default = 0, Suffix = "%",
+        ConfigKey = "demonslayer.dodge.chance",
+    }))
+    chanceSlider:SetEnabled(not prioToggle.Value)
+    prioToggle:OnChanged(function(v) chanceSlider:SetEnabled(not v) end)
+end
 
 -- PING COMP (own section)
 local pingSec = mainTab:AddSection("Ping Compensation", "Fires actions earlier to cover your latency.", { Column = "right" })
@@ -1249,18 +1199,23 @@ local miscMoreSec = miscTab:AddSection("Other", "Coming later.", { Column = "rig
 miscMoreSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
 end
 
--- QOL TAB (placeholders)
+-- QOL TAB
 do
 local qolStatSec = qolTab:AddSection("Stat Farming", "Coming later.", { Column = "left" })
 qolStatSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
 local qolHelpSec = qolTab:AddSection("Quality of Life", "Small helpers.", { Column = "right" })
-qolHelpSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
+Reg("spam_e", qolHelpSec:AddToggle({
+    Title = "Spam E",
+    Tooltip = "Taps E over and over (about 15 times a second). Pauses while the Roblox chat box is focused.",
+    Default = false,
+    ConfigKey = "demonslayer.qol.spamE",
+}))
 end
 
 -- CONFIG AUTOSAVE / AUTOLOAD
 do
     local CONFIG_FILE = "DemonSlayer_Config.json"
-    local SKIP = { sb_t_ping = true, print_parries = true, debug_hits = true, auto_log = true, auto_mediate = true }
+    local SKIP = { sb_t_ping = true, print_parries = true, print_feints = true, debug_hits = true, auto_log = true, auto_mediate = true }
 
     if type(readfile) == "function" and type(isfile) == "function" then
         local ok, raw = pcall(function()
@@ -1413,6 +1368,7 @@ local function SetOptions(dd, names)
 end
 
 local targetType, playerDD, npcDD, pathBox, fallbackDD, folderStatus
+local playerPrevBtn, playerNextBtn, npcPrevBtn, npcNextBtn
 
 local function RefreshLists()
     local names = {}
@@ -1467,6 +1423,8 @@ local function UpdateTargetVisibility(kind)
     fallbackDD:SetVisible(kind == "Fallback")
     pcall(function() folderStatus:SetVisible(kind == "Fallback") end)
     if pathBox then pathBox:SetVisible(kind == "NPC") end
+    for _, b in ipairs({ playerPrevBtn, playerNextBtn }) do pcall(function() b:SetVisible(kind == "Player") end) end
+    for _, b in ipairs({ npcPrevBtn, npcNextBtn }) do pcall(function() b:SetVisible(kind == "NPC") end) end
 end
 
 targetType = trackSec:AddDropdown({
@@ -1483,6 +1441,30 @@ playerDD = trackSec:AddDropdown({ Title = "Player List", Options = { "None" }, D
 npcDD    = trackSec:AddDropdown({ Title = "NPC List", Options = { "None" }, Default = "None", VisibleRows = 8 })
 fallbackDD = trackSec:AddDropdown({ Title = "Fallback List", Options = { "None" }, Default = "None", VisibleRows = 8 })
 folderStatus = trackSec:AddStatus({ Title = "Folder", Default = "-", Tone = "muted" })
+-- Prev / Next buttons walk the player (or NPC) list one entry at a time, for when the list can't be scrolled
+local function StepDropdown(dd, dir)
+    local opts = dd.Options or {}
+    local n = #opts
+    if n == 0 or (n == 1 and (opts[1] == "None" or opts[1] == "No other players")) then
+        Nexa:Notify({ Title = "Tracker", Content = "Nothing to select yet. Try Refresh.", Type = "warning", Duration = 2 })
+        return
+    end
+    local cur = 0
+    for i, o in ipairs(opts) do
+        if o == dd.Value then cur = i break end
+    end
+    local nxt = ((cur - 1 + dir) % n) + 1
+    dd:SetValue(opts[nxt])
+    -- scroll the open list so the new pick is in view (8 rows are visible)
+    dd._listScrollTo = math.max(0, math.min(nxt - 1, math.max(0, n - 8)))
+    dd._listScroll = dd._listScrollTo
+end
+
+playerPrevBtn = trackSec:AddButton({ Title = "", ButtonText = "Previous player", Expand = true, Callback = function() StepDropdown(playerDD, -1) end })
+playerNextBtn = trackSec:AddButton({ Title = "", ButtonText = "Next player", Expand = true, Callback = function() StepDropdown(playerDD, 1) end })
+npcPrevBtn = trackSec:AddButton({ Title = "", ButtonText = "Previous NPC", Expand = true, Callback = function() StepDropdown(npcDD, -1) end })
+npcNextBtn = trackSec:AddButton({ Title = "", ButtonText = "Next NPC", Expand = true, Callback = function() StepDropdown(npcDD, 1) end })
+
 pathBox  = trackSec.AddTextbox and trackSec:AddTextbox({
     Title = "NPC Path",
     Placeholder = "Alive/NpcName (optional)",
@@ -1756,6 +1738,12 @@ Reg("debug_hits", actionSec:AddToggle({
     Default = false,
 }))
 
+Reg("print_feints", actionSec:AddToggle({
+    Title = "Print Feints",
+    Tooltip = "Prints every action the auto-parry skips because of a feint: the enemy, the animation, what gave the feint away (Highlight or the animation stopping early), when it was spotted, and whether the Parry Feint Chance made it act anyway.",
+    Default = false,
+}))
+
 Reg("print_parries", actionSec:AddToggle({
     Title = "Print Parries",
     Tooltip = "Prints every action the auto-parry fires (kind, key, enemy, animation id)",
@@ -1799,7 +1787,7 @@ local cNpcs    = Controls.sb_parry_npcs
 local cRange   = Controls.sb_range
 local cGeneral = Controls.sb_use_general_range
 local cChance  = Controls.sb_parry_chance
-local cUnparry = Controls.sb_parry_unparryables
+local cSameFaction = Controls.sb_parry_same_faction
 
 -- HIT LOG (Debug tab, "Log Hits"): when an animation from an enemy is first seen, remember its start time and
 -- your health. If your health later drops below that value while the animation is still going (plus a short
@@ -1863,70 +1851,37 @@ function HitWatch.Step(now)
     end
 end
 
-local function RightClick()
-    if type(mouse2click) == "function" then
-        pcall(mouse2click)
-    elseif type(mouse2press) == "function" and type(mouse2release) == "function" then
-        pcall(mouse2press)
-        task.wait(0.03)
-        pcall(mouse2release)
-    end
-end
-
 local function ActionKey(kind, hold)
     if kind == "jump" then
         return KEY_JUMP, hold
-    elseif kind == "crouch" then
-        return KEY_CROUCH, hold
-    elseif kind == "dodge" then
-        return KEY_DODGE, hold
-    elseif kind == "unparryable" then
-        if cUnparry.Value then return KEY_PARRY, hold end
+    elseif kind == "dodge" or kind == "unparryable" then
         return KEY_DODGE, hold
     end
     return KEY_PARRY, hold
 end
 
 local function KeyName(vk)
-    return vk == KEY_PARRY and "F" or vk == KEY_DODGE and "Q" or vk == KEY_JUMP and "Space" or "Ctrl"
+    return vk == KEY_PARRY and "F" or vk == KEY_DODGE and "Q" or vk == KEY_JUMP and "Space" or "?"
+end
+
+-- should this parry action press Q instead of F? (Prioritize Dodge, or a roll of Randomize Dodge Chance)
+local function ShouldDodge()
+    if Get("sb_dodge_priority") then return true end
+    local chance = Get("sb_dodge_chance") or 0
+    return chance > 0 and math.random(1, 100) <= chance
 end
 
 -- report(stage, configuredMs) is optional: the Test buttons use it to show every step of the sequence
 local function Perform(kind, hold, tag, model, id, report, meta)
+    if kind == "parry" and ShouldDodge() then
+        kind = "dodge"
+        tag = tag .. " (parry swapped to dodge)"
+    end
     local vk, h = ActionKey(kind, hold)
     PressKey(vk, h)
     if meta and meta.akey then HitWatch.Fired(meta.akey, KeyName(vk)) end
     if report then report("Pressed " .. KeyName(vk) .. " (" .. kind .. ")", 0) end
 
-    -- crouch is a toggle: press it again to stand back up
-    if kind == "crouch" then
-        local uncrouch = (Get("sb_t_uncrouch") or 500) / 1000
-        task.spawn(function()
-            task.wait(uncrouch)
-            if Nexa:IsAlive() then
-                PressKey(KEY_CROUCH, 0.05)
-            else
-                pcall(keypress, KEY_CROUCH)
-                task.wait(0.05)
-                pcall(keyrelease, KEY_CROUCH)
-            end
-            if report then report("Uncrouch (Ctrl again)", uncrouch * 1000) end
-        end)
-    end
-
-    -- roll cancel: right click a set time after a dodge (Q) goes out
-    if vk == KEY_DODGE then
-        local rollCancel = Get("auto_roll_cancel") and (Get("sb_t_rollcancel") or 0) or 0
-        if rollCancel > 0 then
-            task.spawn(function()
-                task.wait(rollCancel / 1000)
-                if Nexa:IsAlive() then RightClick() end
-                if report then report("Roll cancel (right click)", rollCancel) end
-            end)
-        elseif report then
-            report("Roll cancel is off (turn on Auto Roll Cancel and set a timing)", 0)
-        end
-    end
 
     if Get("print_parries") then
         local okN, nm = pcall(function() return model.Name end)
@@ -1944,9 +1899,8 @@ local function Perform(kind, hold, tag, model, id, report, meta)
 end
 
 do
-    -- Test buttons wait 3 seconds (click back into the game), then run the FULL sequence through the
-    -- same Perform path as real actions: crouch -> uncrouch, dodge -> roll cancel. Every step is
-    -- reported with the delay you set and the delay actually measured.
+    -- Test button waits 3 seconds (click back into the game), then fires a dodge through the same
+    -- Perform path as real actions.
     local testBusy = false
 
     local function TestAction(title, kind)
@@ -1960,27 +1914,17 @@ do
                 task.wait(3)
 
                 if Nexa:IsAlive() then
-                    local t0 = os.clock()
-                    Perform(kind, 0.05, " (test)", { Name = "Test" }, "test", function(stage, configuredMs)
-                        local actual = (os.clock() - t0) * 1000
-                        local msg = configuredMs > 0
-                            and string.format("%s - set %.0fms, measured %.0fms", stage, configuredMs, actual)
-                            or stage
-                        Log("Test: " .. msg)
-                        Nexa:Notify({ Title = title, Content = msg, Type = "info", Duration = 3 })
+                    Perform(kind, 0.05, " (test)", { Name = "Test" }, "test", function(stage)
+                        Log("Test: " .. stage)
+                        Nexa:Notify({ Title = title, Content = stage, Type = "info", Duration = 3 })
                     end)
-
-                    -- stay locked until the whole sequence has finished
-                    local tail = math.max(Get("sb_t_uncrouch") or 0, Get("sb_t_rollcancel") or 0)
-                    task.wait(0.4 + tail / 1000)
+                    task.wait(0.4)
                 end
                 testBusy = false
             end,
         })
     end
-    TestAction("Test Crouch", "crouch")
     TestAction("Test Dodge", "dodge")
-    TestAction("Test Unparryable", "unparryable")
 end
 
 local function Schedule(startTime, info, akey, model, id)
@@ -2003,6 +1947,7 @@ local function Schedule(startTime, info, akey, model, id)
                 id         = id,
                 seenAt     = now,
                 startAt    = startTime,
+                actionT    = action.t,
                 graceUntil = at + grace,
             }
         end
@@ -2012,10 +1957,16 @@ end
 local function FireDue()
     if #Queue == 0 then return end
     local t = os.clock()
+    local watchHighlight = Get("sb_feint_highlight")
     for i = #Queue, 1, -1 do
         local q = Queue[i]
+        -- a "Highlight" under the enemy marks a feint; remember it even if it disappears before we fire
+        if watchHighlight and not q.highlighted then
+            local okH, h = pcall(function() return q.model:FindFirstChild("Highlight") end)
+            if okH and h then q.highlighted, q.highlightAt = true, t end
+        end
         if t >= q.at then
-            local feinted = not IsAnimAlive(q.model, q.id)
+            local feinted = q.highlighted or not IsAnimAlive(q.model, q.id)
             local fire, tag = false, ""
 
             if feinted then
@@ -2024,6 +1975,18 @@ local function FireDue()
                 end
             elseif t >= q.graceUntil then
                 fire = true
+            end
+
+            if feinted and Get("print_feints") then
+                local okN, nm = pcall(function() return q.model.Name end)
+                local why = q.highlighted
+                    and string.format("Highlight appeared %.0fms after the animation started", (q.highlightAt - q.startAt) * 1000)
+                    or "animation had stopped early"
+                Log(string.format("Feint (%s) | %s | %s | %s@%.3f | %s | checked %.0fms in, action was due at %.0fms | %s",
+                    q.highlighted and "Highlight" or "animation", okN and DisplayName(nm) or "?", AnimNameId(q.id),
+                    q.kind, q.actionT or 0, why,
+                    (t - q.startAt) * 1000, (q.at - q.startAt) * 1000,
+                    fire and "acted anyway (Parry Feint Chance)" or "skipped"))
             end
 
             if fire then Perform(q.kind, q.hold, tag, q.model, q.id, nil, { seenAt = q.seenAt, startAt = q.startAt, akey = q.owner }) end
@@ -2049,11 +2012,12 @@ local function ScanStep(now)
     -- enemies further than this are skipped without reading their animations
     local nearRange = (useGeneral and generalRange or math.max(AnimMaxRange, DEFAULT_ANIM_RANGE)) * 1.5
     local seenNow, tracked = {}, 0
+    local skipFaction = (not cSameFaction.Value) and MyFaction or nil
 
     for _, enemy in ipairs(Enemies) do
         if ((enemy.isPlayer and doPlayers) or (not enemy.isPlayer and doNpcs))
            and not (enemy.isPlayer and FriendsLower[enemy.lname])
-           and not (enemy.guild and IgnoredGuilds[enemy.guild])
+           and not (skipFaction and enemy.isPlayer and enemy.faction == skipFaction)
            and now >= enemy.skipUntil then
 
             local dist = Dist(enemy)
@@ -2099,8 +2063,6 @@ end
 -- AUTOMATION LOGIC
 -- Wrapped in do...end so its locals don't count against the script's top-level local limit.
 do
-    local KEY_E = 0x45
-
     local function child(root, ...)
         local current = root
         for _, name in ipairs({ ... }) do
@@ -2401,6 +2363,63 @@ do
     end)
 end
 
+-- SPAM E (QOL)
+-- Taps E continuously while the toggle is on and stops whenever the Roblox chat box is focused. Chat focus is
+-- checked several ways because executors expose different parts of the engine; if none of them work the
+-- chat can't be detected and E keeps tapping while you type.
+do
+    local UIS = game:GetService("UserInputService")
+
+    local function walk(root, ...)
+        local cur = root
+        for _, name in ipairs({ ... }) do
+            cur = cur and cur:FindFirstChild(name)
+            if not cur then return nil end
+        end
+        return cur
+    end
+
+    local function ChatOpen()
+        local ok, box = pcall(function() return UIS:GetFocusedTextBox() end)
+        if ok and box then return true end
+
+        -- new TextChatService input bar
+        local okT, focused = pcall(function()
+            return game:GetService("TextChatService").ChatInputBarConfiguration.IsFocused
+        end)
+        if okT and focused == true then return true end
+
+        -- the chat bar's TextBox in CoreGui (new chat) or PlayerGui (legacy chat)
+        local okC, tb = pcall(function()
+            return walk(game:GetService("CoreGui"), "ExperienceChat", "appLayout", "chatInputBar", "Background", "Container", "TextContainer", "TextBoxContainer", "TextBox")
+        end)
+        if okC and tb then
+            local okF, f = pcall(function() return tb:IsFocused() end)
+            if okF and f then return true end
+        end
+        local okL, legacy = pcall(function()
+            local lp = Players.LocalPlayer
+            return walk(lp and lp:FindFirstChild("PlayerGui"), "Chat", "Frame", "ChatBarParentFrame", "Frame", "BoxFrame", "Frame", "ChatBar")
+        end)
+        if okL and legacy then
+            local okF, f = pcall(function() return legacy:IsFocused() end)
+            if okF and f then return true end
+        end
+        return false
+    end
+
+    task.spawn(function()
+        while Nexa:IsAlive() do
+            if Get("spam_e") then
+                if not ChatOpen() then PressKey(KEY_E, 0.02) end
+                task.wait(0.05)
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+end
+
 -- STARTUP
 LoadData()
 LoadIgnored()
@@ -2429,7 +2448,7 @@ task.spawn(function()
 
     while Nexa:IsAlive() do
         local now = os.clock()
-        -- nothing to scan, track or release: sleep longer instead of spinning every frame
+        eee-- nothing to scan, track or release: sleep longer instead of spinning every frame
         local idle = not cOn.Value and TrackedCount == 0 and #Releases == 0
         if not idle then
             Status.loopMs = Status.loopMs * 0.8 + (now - lastLoop) * 1000 * 0.2
@@ -2440,6 +2459,7 @@ task.spawn(function()
             for i = #Releases, 1, -1 do
                 if now >= Releases[i].at then
                     pcall(keyrelease, Releases[i].vk)
+
                     table.remove(Releases, i)
                 end
             end
