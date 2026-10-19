@@ -12,18 +12,18 @@ return {
     },
     Fist = {
         range = 20,
-        M1 = { id = "125094062025381",  type = "parry", t = 0.15 },
-        M2 = { id = "109885476706150",  type = "parry", t = 0.15 },
-        M3 = { id = "77151462184045", type = "parry", t = 0.15 },
-        M4 = { id = "134599650345242", type = "parry", t = 0.15 },
-        Crit = { id = "71289364417188", type = "parry", t = 0.4 },
+        M1 = { id = "125094062025381",  type = "parry", t = 0.1 },
+        M2 = { id = "109885476706150",  type = "parry", t = 0.1 },
+        M3 = { id = "77151462184045", type = "parry", t = 0.1 },
+        M4 = { id = "134599650345242", type = "parry", t = 0.115 },
+        Crit = { id = "71289364417188", type = "parry", t = 0.2 },
     },
     Spear = {
         range = 20,
-        M1 = { id = "102370550761111",  type = "parry", t = 0.2 },
-        M2 = { id = "110795593562760",  type = "parry", t = 0.2 },
-        M3 = { id = "106854532377977", type = "parry", t = 0.2 },
-        M4 = { id = "72924283830224", type = "parry", t = 0.2 },
+        M1 = { id = "102370550761111",  type = "parry", t = 0.12 },
+        M2 = { id = "110795593562760",  type = "parry", t = 0.12 },
+        M3 = { id = "106854532377977", type = "parry", t = 0.12 },
+        M4 = { id = "72924283830224", type = "parry", t = 0.12 },
     },
     Katana = {
         range = 20,
@@ -33,7 +33,7 @@ return {
         M4 = { id = "91593872086921", type = "parry", t = 0.185 },
         Crit = { id = "130992362117184", type = "parry", t = 0.4 },
         Uppercut = { id = "119549866823092", type = "parry", t = 0.2 },
-        Aerial = { id = "71524717919235", type = "parry", t = 0.1, range = 30 },
+        Aerial = { id = "71524717919235", type = "parry", t = 0.05, range = 30 },
       },
     BreathlessDagger = {
         range = 20,
@@ -51,7 +51,13 @@ return {
         Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
         BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
     },
-
+    Breathless = {
+        range = 20,
+        Shoot = { id = "97234658067281",  type = "parry", t = 0.25 },
+        HeavyStrikes = { id = "132302084951226",  type = "parry", t = 0.4,},
+        Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
+        BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
+    },
 
   -- // Blood Demon Arts \\ --
 
@@ -62,7 +68,7 @@ return {
         TripleStrike = { id = "102384282811717",  type = "parry", t = 0.2 },
         DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.1 },
         Sever = { id = "104727243018430", type = "parry", t = 0.7, range = 40 },
-        PhantomRend = { id = "79199587090357", type = "parry", t = 0.225, range = 35 },
+        PhantomRend = { id = "79199587090357", type = "parry", t = 0.175, range = 35 },
     },
 
   
