@@ -18,7 +18,7 @@ return {
         M3 = { id = "86523134384607", type = "parry", t = 0.19 },
         M4 = { id = "91593872086921", type = "parry", t = 0.19 },
         Uppercut = { id = "119549866823092", type = "parry", t = 0.4 },
-        Aerial = { id = "71524717919235", type = "parry", t = 0.4 },
+        Aerial = { id = "71524717919235", type = "parry", t = 0.2 },
       },
     BreathlessDagger = {
         range = 15,
