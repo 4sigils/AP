@@ -1,38 +1,52 @@
 return {
+[04:10:36] : [Demon://Slayer] Track: sigiltatted | Unknown | 125094062025381 | 0.02s in | new
+[04:10:36] : [Demon://Slayer] Track: sigiltatted | Unknown | 109885476706150 | 0.00s in | new
+[04:10:37] : [Demon://Slayer] Track: sigiltatted | Unknown | 77151462184045 | 0.03s in | new
+[04:10:37] : [Demon://Slayer] Track: sigiltatted | Unknown | 134599650345242 | 0.01s in | new
+[04:10:38] : [Demon://Slayer] Track: sigiltatted | Unknown | 71289364417188 | 0.02s in | new
+[04:10:39] : [Demon://Slayer] Track: sigiltatted | Unknown | 180435792 | 0.01s in | new
 
   -- // Weapons \\ --
     CombustibleBlood = {
-        range = 15,
+        range = 20,
         M1 = { id = "91644861033119",  type = "parry", t = 0.4 },
         M2 = { id = "70697579781813",  type = "parry", t = 0.4 },
         M3 = { id = "133184035243501", type = "parry", t = 0.4 },
         M4 = { id = "128754342991229", type = "parry", t = 0.4 },
         Uppercut = { id = "96799353160538", type = "parry", t = 0.4 },
         Downslam = { id = "96799353160538", type = "parry", t = 0.4 },
-        Aerial = { id = "74057690611976", type = "parry", t = 0.4 },
+        Aerial = { id = "74057690611976", type = "parry", t = 0.4, range = 30 },
+    },
+    Fist = {
+        range = 20,
+        M1 = { id = "125094062025381",  type = "parry", t = 0.2 },
+        M2 = { id = "109885476706150",  type = "parry", t = 0.2 },
+        M3 = { id = "77151462184045", type = "parry", t = 0.2 },
+        M4 = { id = "134599650345242", type = "parry", t = 0.2 },
+        Crit = { id = "71289364417188", type = "parry", t = 0.4 },
     },
     Katana = {
-        range = 15,
-        M1 = { id = "103121348089957",  type = "parry", t = 0.19 },
-        M2 = { id = "86186191281041",  type = "parry", t = 0.19 },
-        M3 = { id = "86523134384607", type = "parry", t = 0.19 },
-        M4 = { id = "91593872086921", type = "parry", t = 0.19 },
+        range = 20,
+        M1 = { id = "103121348089957",  type = "parry", t = 0.185 },
+        M2 = { id = "86186191281041",  type = "parry", t = 0.185 },
+        M3 = { id = "86523134384607", type = "parry", t = 0.185 },
+        M4 = { id = "91593872086921", type = "parry", t = 0.185 },
         Uppercut = { id = "119549866823092", type = "parry", t = 0.2 },
-        Aerial = { id = "71524717919235", type = "parry", t = 0.2 },
+        Aerial = { id = "71524717919235", type = "parry", t = 0.1, range = 30 },
       },
     BreathlessDagger = {
-        range = 15,
-        M1 = { id = "96380214049245",  type = "parry", t = 0.2 },
-        M2 = { id = "136450851042206",  type = "parry", t = 0.2 },
-        M3 = { id = "135347279931214", type = "parry", t = 0.2 },
-        M4 = { id = "78091382689877", type = "parry", t = 0.2 },
+        range = 20,
+        M1 = { id = "96380214049245",  type = "parry", t = 0.185 },
+        M2 = { id = "136450851042206",  type = "parry", t = 0.185 },
+        M3 = { id = "135347279931214", type = "parry", t = 0.185 },
+        M4 = { id = "78091382689877", type = "parry", t = 0.185 },
     },
 
   -- // Breathings \\ --
     Breathless = {
-        range = 15,
+        range = 20,
         Shoot = { id = "97234658067281",  type = "parry", t = 0.25 },
-        HeavyStrikes = { id = "132302084951226",  type = "parry", t = 0.4, 0.8 },
+        HeavyStrikes = { id = "132302084951226",  type = "parry", t = 0.4,},
         Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
         BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
     },
@@ -41,8 +55,14 @@ return {
   -- // Blood Demon Arts \\ --
 
 
-
-
+  -- // Skills \\ --
+    Slayers = {
+        range = 20,
+        ABC = { id = "555",  type = "parry", t = 0.25 },
+        DEF = { id = "555",  type = "parry", t = 0.4,},
+        GHI = { id = "555", type = "parry", t = 0.2 },
+        JKL = { id = "555", type = "parry", t = 0.4 },
+    },
 
   
 }
