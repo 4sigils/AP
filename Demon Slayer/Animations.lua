@@ -35,6 +35,14 @@ return {
         Uppercut = { id = "119549866823092", type = "parry", t = 0.2 },
         Aerial = { id = "71524717919235", type = "parry", t = 0.175, range = 30 },
       },
+    DualKatana = {
+        range = 20,
+        M1 = { id = "110126032743062",  type = "parry", t = 0.255 },
+        M2 = { id = "97168927990082",  type = "parry", t = 0.225 },
+        M3 = { id = "139895711065049", type = "parry", t = 0.225 },
+        M4 = { id = "112068585771911", type = "parry", t = 0.225 },
+        Crit = { id = "126055622299113", type = "parry", t = 0.4 },
+      },
     BreathlessDagger = {
         range = 20,
         M1 = { id = "96380214049245",  type = "parry", t = 0.185 },
@@ -42,7 +50,7 @@ return {
         M3 = { id = "135347279931214", type = "parry", t = 0.185 },
         M4 = { id = "78091382689877", type = "parry", t = 0.185 },
     },
-
+  
   -- // Breathings \\ --
     Breathless = {
         range = 20,
@@ -51,7 +59,6 @@ return {
         Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
         BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
     },
-
     Water = {
         range = 20,
         WaterWheel = { id = "134966259622380",  type = "parry", t = 0.4 },
@@ -60,10 +67,61 @@ return {
         RiptideCrash = { id = "118847875510115", type = "parry", t = 0.585 },
         ConstantFlux = { id = "128329834173776", type = "parry", t = 0.28 },
     },
-
+    Beast = {
+        range = 35,
+        TwinFang = { id = "93063736036488",  type = "parry", t = 0.4 },
+        Devour = { id = "97905170989545",  type = "parry", t = 0.3,},
+        FuryCleave = { id = "96990488542808", type = "parry", t = 0.65 },
+        CrazyCutting = { id = "130288404538299", type = "parry", t = 0.585 },
+        Pounce = { id = "71966131351379", type = "parry", t = 0.28 },
+    },
+    Mist = {
+        range = 35,
+        ShiftingFlowSlash = { id = "100999591484952",  type = "parry", t = 0.4 },
+        VanishingHaze = { id = "138011299604053",  type = "parry", t = 0.3,},
+        DistantHaze = { id = "114172011318475", type = "parry", t = 0.65 },
+        DisappearingAct = { id = "130288404538299", type = "parry", t = 0.585 },
+        SeaOfClouds = { id = "123959674847311", type = "parry", t = 0.28 },
+    },
+    Insect = {
+        range = 35,
+        Caprice = { id = "108288128011027",  type = "parry", t = 0.4 },
+        EnticingSlash = { id = "127140989114816",  type = "parry", t = 0.3,},
+        CompoundEyeHexagon = { id = "115403673185203", type = "parry", t = 0.65 },
+        TrueFlutter = { id = "71277586906816", type = "parry", t = 0.585 },
+        Onikubiotoshi = { id = "71947173733964", type = "parry", t = 0.28 },
+    },
+    Wind = {
+        range = 35,
+        WhirlwindCutter = { id = "90311220829006",  type = "parry", t = 0.4 },
+        PurifyingWind = { id = "85402778900638",  type = "parry", t = 0.3,},
+        RagingWind = { id = "140592940232015", type = "parry", t = 0.65 },
+        CleanStorm = { id = "91162717273283", type = "parry", t = 0.585 },
+        RisingStorm = { id = "121132165295724", type = "parry", t = 0.28 },
+    },
+    Sound = {
+        range = 35,
+        LoudAct = { id = "134463248547561",  type = "parry", t = 0.4 },
+        ResoundingSlashes = { id = "137842536522916",  type = "parry", t = 0.3,},
+        ExplosiveFireworks = { id = "134967644483955", type = "parry", t = 0.65 },
+        MusicalScore = { id = "85402778900638", type = "parry", t = 0.585 },
+        --StringPerformance = { id = "123456", type = "parry", t = 0.28 },
+    },
+    Flame = {
+        range = 35,
+        RisingScourchingSun = { id = "73334815670764",  type = "parry", t = 0.4 },
+        FlameTiger = { id = "70411605547572",  type = "parry", t = 0.3,},
+        UnknowingFire = { id = "110163269571457", type = "parry", t = 0.65 },
+        BlazingUniverse = { id = "132957170550360", type = "parry", t = 0.585 },
+        BloomingFlameUndulation = { id = "126062536482065", type = "parry", t = 0.28 },
+    },
+    Thunder = {
+        range = 35,
+        ThunderClap = { id = "102926152833699",  type = "parry", t = 0.4 },
+        Sixfold = { id = "98891279066411",  type = "parry", t = 0.3,},
+    },
   -- // Blood Demon Arts \\ --
 
-  
   -- // Skills \\ --
     Slayers = {
         range = 20,
@@ -72,7 +130,15 @@ return {
         Sever = { id = "104727243018430", type = "parry", t = 1, range = 40 },
         PhantomRend = { id = "79199587090357", type = "parry", t = 0.42, range = 35 },
     },
-
+    Demons = {
+        range = 20,
+        CarnageLunge = { id = "75699488496904",  type = "parry", t = 0.5 },
+        ClawStrikes = { id = "108400568667871", type = "parry", t = 0.28 },
+        DemonicShove = { id = "133138262822421", type = "parry", t = 1, range = 40 },
+        LeapKick = { id = "80952506063034", type = "parry", t = 0.42, range = 35 },
+        DevastatingBlow = { id = "137309291333277", type = "parry", t = 1, range = 25 },
+        GroundSmash = { id = "73969522049044", type = "parry", t = 0.42, range = 35 },
+    },
   
 }
 
