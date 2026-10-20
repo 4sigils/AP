@@ -3,7 +3,7 @@ local LOG_TAG   = "[Demon://Slayer]"
 
 local IGNORE_URL = "https://raw.githubusercontent.com/4sigils/AP/refs/heads/main/Demon%20Slayer/IgnoredAnimations.lua"
 -- Single source of truth for every auto parry animation. Returns { ["id"] = timing, ... }
-local ANIM_URL   = "https://raw.githubusercontent.com/4sigils/AP/refs/heads/main/Demon%20Slayer/Animations.lua"
+--local ANIM_URL   = "https://raw.githubusercontent.com/4sigils/AP/refs/heads/main/Demon%20Slayer/Animations.lua"
 
 local LOGO_URL = "https://cdn.discordapp.com/attachments/1402876855840804895/1558405775167201400/noFilter_1.png?ex=6acb51fa&is=6aca007a&hm=8ff9153ff0a850fa34512fbe989660978c0583fa43b6a417caac6a61de7189fd&"
 -- Embedded 4x4 black PNG (no download, no 1920x1080 texture to decode and draw every frame)
@@ -755,6 +755,8 @@ end
 
 local RefreshCategoryOptions -- assigned once the Debug tab exists
 
+-- OLD LOADDATA
+--[[
 local function LoadData()
     AnimDB = {}
     AnimMaxRange = 0
@@ -818,6 +820,294 @@ local function LoadData()
     end
     table.sort(AnimCategories, function(x, y) return string.lower(x) < string.lower(y) end)
     if RefreshCategoryOptions then pcall(RefreshCategoryOptions) end
+end
+
+-- IGNORED ANIMS
+local IgnoredIds = {}
+
+local function LoadIgnored()
+    IgnoredIds = {}
+
+    local src = HttpGet(IGNORE_URL)
+    if not src then
+        Log("Failed to download ignore list from " .. IGNORE_URL)
+        return
+    end
+
+    for line in src:gmatch("[^\r\n]+") do
+        line = line:gsub("%-%-.*$", "")
+        for id in line:gmatch("%d+") do IgnoredIds[id] = true end
+    end
+
+    local n = 0
+    for _ in pairs(IgnoredIds) do n = n + 1 end
+    Status.ignored = n
+    Log("Ignoring " .. n .. " animations")
+end
+]]local function LoadData()
+	AnimDB = {}
+	AnimMaxRange = 0
+	AnimCategories = {}
+	Status.loaded = 0
+
+	local data = {
+		-- // Weapons \\ --
+		CombustibleBloodFist = {
+			range = 20,
+			M1 = { id = "91644861033119", type = "parry", t = 0.4 },
+			M2 = { id = "70697579781813", type = "parry", t = 0.4 },
+			M3 = { id = "133184035243501", type = "parry", t = 0.4 },
+			M4 = { id = "128754342991229", type = "parry", t = 0.4 },
+			Uppercut = { id = "96799353160538", type = "parry", t = 0.3 },
+			Downslam = { id = "96799353160538", type = "parry", t = 0.4 },
+			Aerial = { id = "74057690611976", type = "parry", t = 0.175, range = 30 },
+		},
+		Fist = {
+			range = 20,
+			M1 = { id = "125094062025381", type = "parry", t = 0.225 },
+			M2 = { id = "109885476706150", type = "parry", t = 0.225 },
+			M3 = { id = "77151462184045", type = "parry", t = 0.225 },
+			M4 = { id = "134599650345242", type = "parry", t = 0.225 },
+			Crit = { id = "71289364417188", type = "parry", t = 0.4 },
+		},
+		Spear = {
+			range = 20,
+			M1 = { id = "102370550761111", type = "parry", t = 0.225 },
+			M2 = { id = "110795593562760", type = "parry", t = 0.225 },
+			M3 = { id = "106854532377977", type = "parry", t = 0.225 },
+			M4 = { id = "72924283830224", type = "parry", t = 0.225 },
+		},
+		BloodSickle = {
+			range = 20,
+			M1 = { id = "97377704391870", type = "parry", t = 0.225 },
+			M2 = { id = "76587927033482", type = "parry", t = 0.225 },
+			M3 = { id = "119664627445543", type = "parry", t = 0.225 },
+			M4 = { id = "110772408128576", type = "parry", t = 0.225 },
+		},
+		Katana = {
+			range = 20,
+			M1 = { id = "103121348089957", type = "parry", t = 0.255 },
+			M2 = { id = "86186191281041", type = "parry", t = 0.225 },
+			M3 = { id = "86523134384607", type = "parry", t = 0.225 },
+			M4 = { id = "91593872086921", type = "parry", t = 0.225 },
+			Crit = { id = "130992362117184", type = "parry", t = 0.4 },
+			Uppercut = { id = "119549866823092", type = "parry", t = 0.2 },
+			Aerial = { id = "71524717919235", type = "parry", t = 0.175, range = 30 },
+		},
+		DualKatana = {
+			range = 20,
+			M1 = { id = "110126032743062", type = "parry", t = 0.255 },
+			M2 = { id = "97168927990082", type = "parry", t = 0.225 },
+			M3 = { id = "139895711065049", type = "parry", t = 0.225 },
+			M4 = { id = "112068585771911", type = "parry", t = 0.225 },
+			Crit = { id = "126055622299113", type = "parry", t = 0.4 },
+		},
+		BreathlessDagger = {
+			range = 20,
+			M1 = { id = "96380214049245", type = "parry", t = 0.185 },
+			M2 = { id = "136450851042206", type = "parry", t = 0.185 },
+			M3 = { id = "135347279931214", type = "parry", t = 0.185 },
+			M4 = { id = "78091382689877", type = "parry", t = 0.185 },
+		},
+
+		-- // Breathings \\ --
+		Breathless = {
+			range = 20,
+			Shoot = { id = "97234658067281", type = "parry", t = 0.25 },
+			HeavyStrikes = { id = "132302084951226", type = "parry", t = 0.4 },
+			Cleave = { id = "128316092974532", type = "parry", t = 0.2 },
+			BlitzCut = { id = "122343074421049", type = "parry", t = 0.4 },
+		},
+		Water = {
+			range = 20,
+			WaterWheel = { id = "134966259622380", type = "parry", t = 0.4 },
+			Mopped = { id = "104404186432785", type = "parry", t = 0.3 },
+			WaterBasin = { id = "117098193437240", type = "parry", t = 0.65 },
+			RiptideCrash = { id = "118847875510115", type = "parry", t = 0.585 },
+			ConstantFlux = { id = "128329834173776", type = "parry", t = 0.28 },
+		},
+		Beast = {
+			range = 35,
+			TwinFang = { id = "93063736036488", type = "parry", t = 0.4 },
+			Devour = { id = "97905170989545", type = "parry", t = 0.3 },
+			FuryCleave = { id = "96990488542808", type = "parry", t = 0.65 },
+			CrazyCutting = { id = "130288404538299", type = "parry", t = 0.585 },
+			Pounce = { id = "71966131351379", type = "parry", t = 0.28 },
+		},
+		Mist = {
+			range = 35,
+			ShiftingFlowSlash = { id = "100999591484952", type = "parry", t = 0.4 },
+			VanishingHaze = { id = "138011299604053", type = "parry", t = 0.3 },
+			DistantHaze = { id = "114172011318475", type = "parry", t = 0.65 },
+			DisappearingAct = { id = "130288404538299", type = "parry", t = 0.585 },
+			SeaOfClouds = { id = "123959674847311", type = "parry", t = 0.28 },
+		},
+		Insect = {
+			range = 35,
+			Caprice = { id = "108288128011027", type = "parry", t = 0.4 },
+			EnticingSlash = { id = "127140989114816", type = "parry", t = 0.3 },
+			CompoundEyeHexagon = { id = "115403673185203", type = "parry", t = 0.65 },
+			TrueFlutter = { id = "71277586906816", type = "parry", t = 0.585 },
+			Onikubiotoshi = { id = "71947173733964", type = "parry", t = 0.28 },
+		},
+		Wind = {
+			range = 35,
+			WhirlwindCutter = { id = "90311220829006", type = "parry", t = 0.4 },
+			PurifyingWind = { id = "85402778900638", type = "parry", t = 0.3 },
+			RagingWind = { id = "140592940232015", type = "parry", t = 0.65 },
+			CleanStorm = { id = "91162717273283", type = "parry", t = 0.585 },
+			RisingStorm = { id = "121132165295724", type = "parry", t = 0.28 },
+		},
+		Sound = {
+			range = 35,
+			LoudAct = { id = "134463248547561", type = "parry", t = 0.4 },
+			ResoundingSlashes = { id = "137842536522916", type = "parry", t = 0.3 },
+			ExplosiveFireworks = { id = "134967644483955", type = "parry", t = 0.65 },
+			MusicalScore = { id = "85402778900638", type = "parry", t = 0.585 },
+		},
+		Flame = {
+			range = 35,
+			RisingScourchingSun = { id = "73334815670764", type = "parry", t = 0.4 },
+			FlameTiger = { id = "70411605547572", type = "parry", t = 0.3 },
+			UnknowingFire = { id = "110163269571457", type = "parry", t = 0.65 },
+			BlazingUniverse = { id = "132957170550360", type = "parry", t = 0.585 },
+			BloomingFlameUndulation = { id = "126062536482065", type = "parry", t = 0.28 },
+		},
+		Thunder = {
+			range = 35,
+			--ThunderClap = { id = "102926152833699", type = "parry", t = 0.4 },
+			Sixfold = { id = "98891279066411", type = "parry", t = 0.3 },
+		},
+		-- // Breathings \\ --
+		CombustibleBlood = {
+			range = 35,
+			BloodFrenzy = { id = "94452593509182", type = "parry", t = 0.4 },
+			BloodPiercer = { id = "132716767844979", type = "parry", t = 0.3 },
+			BloodHellfire = { id = "115530183688221", type = "parry", t = 0.65 },
+			RagingKicks = { id = "136054002442608", type = "parry", t = 0.585 },
+			VanishDropkick = { id = "77856774434973", type = "parry", t = 0.28 },
+		},
+		WindBDA = {
+			range = 35,
+        	FanM1 = { id = "118880082177545", type = "parry", t = 0.2 },
+    		FanM2 = { id = "99341764866323", type = "parry", t = 0.2 },
+    		FanM3 = { id = "120813009106080", type = "parry", t = 0.2 },
+    		FanM4 = { id = "132315794301335", type = "parry", t = 0.2 },
+    		FanCritical = { id = "70451590584643", type = "parry", t = 0.2 },
+            
+			DownburstImpact = { id = "91099860836236", type = "parry", t = 0.4 },
+			LeafstormSpiral = { id = "96046181826232", type = "parry", t = 0.3 },
+			WhirlingRampage = { id = "89451845565990", type = "parry", t = 0.65 },
+			EyeOfTheStorm = { id = "127331453750301", type = "parry", t = 0.585 },
+			DriftingDescent = { id = "99818630809522", type = "parry", t = 0.28 },
+		},
+		Blood = {
+			range = 35,
+			BloodSickleSlashes = { id = "98397579500244", type = "parry", t = 0.4 },
+			RampageArc = { id = "84376916610256", type = "parry", t = 0.3 },
+			FlyingBloodSickles = { id = "94468611904628", type = "parry", t = 0.65 },
+			SickleLunge = { id = "77812016042854", type = "parry", t = 0.585 },
+			RotatingCircularSlashes = { id = "121701494097664", type = "parry", t = 0.28 },
+		},
+		Arrow = {
+			range = 35,
+			ArrowBarrage = { id = "79830336034397", type = "parry", t = 0.4 },
+			RainingArrows = { id = "138352826464604", type = "parry", t = 0.3 },
+			ConcavingArrows = { id = "133804342773502", type = "parry", t = 0.65 },
+			ArrowArsenal = { id = "87884069920249", type = "parry", t = 0.585 },
+			ArrowPlunge = { id = "94649367114180", type = "parry", t = 0.28 },
+		},
+		BlackLightning = {
+			range = 35,
+    		WeaponCrit = { id = "70451590584643", type = "parry", t = 0.4 },
+
+			SpinningThrust = { id = "102162816511374", type = "parry", t = 0.4 },
+			LightningField = { id = "114621447320136", type = "parry", t = 0.3 },
+			RumbleAndFlash = { id = "110009814800890", type = "parry", t = 0.65 },
+			AngryBlitz = { id = "95236452937878", type = "parry", t = 0.585 },
+			DistantThunder = { id = "102926152833699", type = "parry", t = 0.28 },
+		},
+		Moon = {
+			range = 35,
+			MoonGaze = { id = "110009814800890", type = "parry", t = 0.4 },
+			MoonDance = { id = "117969711971279", type = "parry", t = 0.3 },
+			--MoonFall = { id = "126920344583934", type = "parry", t = 0.65 }, COUNTER BOIIII
+			Misfortune = { id = "109645758052974", type = "parry", t = 0.585 },
+			--EveningMoon = { id = "131185960425683", type = "parry", t = 0.28 }, Projectile thing
+		},
+		Akaza = {
+			range = 35,
+			--CompassNeedle = { id = "120894263412609", type = "parry", t = 0.4 }, ITS A BUFF BOIIII
+			AirType = { id = "139805833103757", type = "parry", t = 0.3 },
+			CrownSplitter = { id = "71935168632019", type = "parry", t = 0.65 },
+			GroundType = { id = "129943014817897", type = "parry", t = 0.585 },
+			LegType = { id = "124919373714030", type = "parry", t = 0.28 },
+		},
+        
+		-- // Skills \\ --
+		Slayers = {
+			range = 20,
+			TripleStrike = { id = "102384282811717", type = "parry", t = 0.5 },
+			DeflectingSlash = { id = "113942667990586", type = "parry", t = 0.28 },
+			Sever = { id = "104727243018430", type = "parry", t = 1, range = 40 },
+			PhantomRend = { id = "79199587090357", type = "parry", t = 0.42, range = 35 },
+		},
+		Demons = {
+			range = 20,
+			CarnageLunge = { id = "75699488496904", type = "parry", t = 0.5 },
+			ClawStrikes = { id = "108400568667871", type = "parry", t = 0.28 },
+			DemonicShove = { id = "133138262822421", type = "parry", t = 1, range = 40 },
+			LeapKick = { id = "80952506063034", type = "parry", t = 0.42, range = 35 },
+			DevastatingBlow = { id = "137309291333277", type = "parry", t = 1, range = 25 },
+			GroundSmash = { id = "73969522049044", type = "parry", t = 0.42, range = 35 },
+		},
+	}
+
+	local n = 0
+	local seenCat = {}
+
+	-- Process category maps (e.g. CombustibleBlood, Water, Demons)
+	for categoryName, categoryData in pairs(data) do
+		local catRange = categoryData.range
+
+		for moveName, moveSpec in pairs(categoryData) do
+			if type(moveSpec) == "table" then
+				local animId = moveSpec.id
+				if animId then
+					-- Extract action properties
+					local action = {
+						type = moveSpec.type or "parry",
+						t = moveSpec.t,
+					}
+
+					local effectiveRange = moveSpec.range or catRange
+					AnimDB[animId] = {
+						name = moveName,
+						actions = { action },
+						range = effectiveRange,
+						cat = categoryName,
+					}
+
+					if effectiveRange and effectiveRange > AnimMaxRange then
+						AnimMaxRange = effectiveRange
+					end
+
+					n = n + 1
+				end
+			end
+		end
+
+		if not seenCat[categoryName] then
+			seenCat[categoryName] = true
+			AnimCategories[#AnimCategories + 1] = categoryName
+		end
+	end
+
+	Log("Loaded " .. n .. " animations")
+	Status.loaded = n
+
+	table.sort(AnimCategories, function(x, y) return string.lower(x) < string.lower(y) end)
+	if RefreshCategoryOptions then pcall(RefreshCategoryOptions) end
 end
 
 -- IGNORED ANIMS
