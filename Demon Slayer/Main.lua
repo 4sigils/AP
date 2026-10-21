@@ -981,7 +981,7 @@ end
 		-- // Breathings \\ --
 		CombustibleBlood = {
 			range = 35,
-			BloodFrenzy = { id = "94452593509182", type = "parry", t = 0.4 },
+			BloodFrenzy = { id = "94452593509182", type = "parry", t = 0.3 },
 			BloodPiercer = { id = "132716767844979", type = "parry", t = 0.3 },
 			BloodHellfire = { id = "115530183688221", type = "parry", t = 0.65 },
 			RagingKicks = { id = "136054002442608", type = "parry", t = 0.585 },
