@@ -61,7 +61,7 @@ end
 -- NEXA UI LOADER
 local Nexa
 do
-local NEXA_SOURCE = "https://raw.githubusercontent.com/OgTen/Nexa-UI/refs/heads/main/nexa-ui.lua"
+local NEXA_SOURCE = "https://raw.githubusercontent.com/4sigils/AP/refs/heads/main/Demon%20Slayer/UILibrary.lua"
 
 local function isNexaLibrary(value)
     return type(value) == "table"
@@ -152,6 +152,10 @@ local function getNexa()
 end
 
 Nexa = getNexa()
+Nexa:OnDestroy(function()
+    RemoveTrackedDrawings()
+    if DrawingLib and OrigDrawingNew then pcall(function() DrawingLib.new = OrigDrawingNew end) end
+end)
 end
 
 local Controls = {}
@@ -465,16 +469,16 @@ local function PingToComp(ping)
     return math.max(-BASE_PING, math.min(300, comp))
 end
 
--- AUTO PING COMP (live ping, smoothed with a 0.25 factor, compensate the one-way trip = ping / 2,
+-- AUTO PING COMP (ping re-read every few seconds (AutoPing.interval), smoothed with a 0.5 factor, compensate the one-way trip = ping / 2,
 -- and no compensation at all under 25 ms)
-local AutoPing = { smoothing = 0.25, min = 25, max = 300, smooth = nil, at = 0, comp = 0 }
+local AutoPing = { smoothing = 0.5, min = 25, max = 300, smooth = nil, at = 0, comp = 0, interval = 3 }
 
 local function UpdateAutoPing(now)
-    if now - AutoPing.at < 0.2 then return end
+    if AutoPing.smooth and now - AutoPing.at < AutoPing.interval then return end
     local raw = GetPingMs()
     if not raw then return end
 
-    if AutoPing.smooth == nil or now - AutoPing.at > 1.5 then
+    if AutoPing.smooth == nil or now - AutoPing.at > AutoPing.interval * 3 then
         AutoPing.smooth = raw -- first sample or a long gap: start fresh
     else
         AutoPing.smooth = AutoPing.smooth + (raw - AutoPing.smooth) * AutoPing.smoothing
@@ -1169,9 +1173,7 @@ do
 end
 
 local mainTab       = Nexa:AddTab({ Title = "Auto Parry", Icon = "shield", Select = true })
-local automationTab = Nexa:AddTab({ Title = "Automation", Icon = "zap" })
 local visualsTab    = Nexa:AddTab({ Title = "Visuals", Icon = "eye" })
-local miscTab       = Nexa:AddTab({ Title = "Misc", Icon = "layers" })
 local qolTab        = Nexa:AddTab({ Title = "QOL", Icon = "zap" })
 local trackerTab    = Nexa:AddTab({ Title = "Tracker", Icon = "crosshair" })
 local whitelistTab  = Nexa:AddTab({ Title = "Whitelists", Icon = "users" })
@@ -1364,21 +1366,53 @@ Reg("sb_parry_chance", parrySec:AddSlider({
     Min = 1, Max = 100, Step = 1, Default = 100, Suffix = "%",
     ConfigKey = "demonslayer.parry.chance",
 }))
+Reg("sb_track_range", parrySec:AddSlider({
+    Title = "Tracking Range",
+    Tooltip = "Animations from enemies within this many studs are tracked. They are only parried once the enemy is also inside the normal range (General Range, or the animation's own base distance). Nothing is parried beyond the Tracking Range.",
+    Min = 5, Max = 200, Step = 1, Default = 40, Suffix = " studs",
+    ConfigKey = "demonslayer.parry.trackRange",
+}))
 do
+    local trackToggle = parrySec:AddToggle({
+        Title = "Display Tracking Range",
+        Tooltip = "Draws a ring on the ground around your character at the Tracking Range.",
+        Default = false,
+        ConfigKey = "demonslayer.parry.displayTrackRange",
+    })
+    Reg("sb_display_track", trackToggle)
+    Reg("sb_display_track_color", trackToggle:AddColorPicker({
+        Default = Color3.fromRGB(255, 200, 60),
+        ConfigKey = "demonslayer.parry.displayTrackRangeColor",
+    }))
     local generalToggle = Reg("sb_use_general_range", parrySec:AddToggle({
         Title = "Use General Range",
         Tooltip = "On: every animation uses the General Range slider. Off: each animation uses its own base distance from the data file (20 studs if it has none).",
         Default = true,
         ConfigKey = "demonslayer.parry.useGeneralRange",
     }))
+    local displayToggle = parrySec:AddToggle({
+        Title = "Display Range",
+        Tooltip = "Draws a ring on the ground around your character showing the General Range. Only works while Use General Range is on.",
+        Default = false,
+        ConfigKey = "demonslayer.parry.displayRange",
+    })
+    Reg("sb_display_range", displayToggle)
+    Reg("sb_display_range_color", displayToggle:AddColorPicker({
+        Default = Color3.fromRGB(80, 200, 255),
+        ConfigKey = "demonslayer.parry.displayRangeColor",
+    }))
     local rangeSlider = Reg("sb_range", parrySec:AddSlider({
         Title = "General Range",
-        Tooltip = "Only react to animations from enemies within this many studs. Only used while Use General Range is on.",
+        Tooltip = "Only parry animations from enemies within this many studs. Only used while Use General Range is on.",
         Min = 5, Max = 100, Step = 1, Default = 20, Suffix = " studs",
         ConfigKey = "demonslayer.parry.range",
     }))
     rangeSlider:SetEnabled(generalToggle.Value and true or false)
-    generalToggle:OnChanged(function(v) rangeSlider:SetEnabled(v and true or false) end)
+    displayToggle:SetEnabled(generalToggle.Value and true or false)
+    generalToggle:OnChanged(function(v)
+        rangeSlider:SetEnabled(v and true or false)
+        displayToggle:SetEnabled(v and true or false)
+    end)
 end
 
 -- PING COMP (own section, directly under the main Auto Parry section)
@@ -1448,25 +1482,6 @@ end
 
 end
 
--- AUTOMATION TAB (placeholders)
-do
-local generalSec = automationTab:AddSection("General", "Quality-of-life automation.", { Column = "left" })
-Reg("auto_log", generalSec:AddToggle({
-    Title = "Auto Log (STR)",
-    Tooltip = "Teleports to the log spot, presses E, teleports to the second spot, and repeats (0.5s waits).",
-    Default = false,
-    ConfigKey = "demonslayer.automation.autoLog",
-}))
-Reg("auto_mediate", generalSec:AddToggle({
-    Title = "Auto Mediate (FOCUS)",
-    Tooltip = "Needs more than 25 yen. Teleports to a Blood Focus Arena mat, presses E, confirms, then keeps the mouse on the orb closest to the top-left corner.",
-    Default = false,
-    ConfigKey = "demonslayer.automation.autoMediate",
-}))
-local moreSec = automationTab:AddSection("More", "Coming later.", { Column = "right" })
-moreSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
-end
-
 -- VISUALS TAB (placeholders + ESP options)
 do
 local espWorldSec = visualsTab:AddSection("World", "World ESP.", { Column = "left" })
@@ -1476,7 +1491,32 @@ espLootSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." }
 local espMiscSec = visualsTab:AddSection("Misc", "Other ESP.", { Column = "left" })
 espMiscSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
 local espEntitiesSec = visualsTab:AddSection("Entities", "Things that move around.", { Column = "right" })
-espEntitiesSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
+do
+    local t = espEntitiesSec:AddToggle({
+        Title = "Player ESP",
+        Tooltip = "Draws every other player under workspace.Alive. Needs Enabled turned on in Options.",
+        Default = false,
+        ConfigKey = "demonslayer.visuals.espPlayer",
+    })
+    Reg("esp_player", t)
+    Reg("esp_player_color", t:AddColorPicker({
+        Default = Color3.fromRGB(255, 80, 80),
+        ConfigKey = "demonslayer.visuals.espPlayerColor",
+    }))
+end
+do
+    local t = espEntitiesSec:AddToggle({
+        Title = "Self ESP",
+        Tooltip = "Draws the ESP on your own character too. Needs Enabled turned on in Options.",
+        Default = false,
+        ConfigKey = "demonslayer.visuals.espSelf",
+    })
+    Reg("esp_self", t)
+    Reg("esp_self_color", t:AddColorPicker({
+        Default = Color3.fromRGB(80, 255, 120),
+        ConfigKey = "demonslayer.visuals.espSelfColor",
+    }))
+end
 
 local espOptionsSec = visualsTab:AddSection("Options", "How the ESP is drawn.", { Column = "right" })
 Reg("esp_enabled", espOptionsSec:AddToggle({
@@ -1544,12 +1584,512 @@ Reg("esp_range", espOptionsSec:AddSlider({
 }))
 end
 
--- MISC TAB (placeholders)
+-- PLAYER ESP drawing (same methods as the Deepwoken ESP: own camera projection, cached Drawing writes,
+-- fixed text-width estimate). Wrapped in do...end so its locals don't count against the top-level limit.
 do
-local miscGeneralSec = miscTab:AddSection("Removals", "Strip effects and obstacles out of the world.", { Column = "left" })
-miscGeneralSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
-local miscMoreSec = miscTab:AddSection("Other", "Coming later.", { Column = "right" })
-miscMoreSec:AddLabel({ Title = "Placeholder", Description = "Nothing here yet." })
+    local WHITE = Color3.fromRGB(255, 255, 255)
+    local BLACK = Color3.fromRGB(0, 0, 0)
+    local BAR_BACK = Color3.fromRGB(20, 20, 20)
+    local BAR_GREEN = Color3.fromRGB(60, 255, 100)
+    local REFRESH = 0.5
+    -- studs around a character's root part: above / below, half width (arms out) and half depth
+    local BOX_UP, BOX_DOWN, BOX_HW, BOX_HD = 2.9, 3.2, 2.1, 1.1
+    local NEAR = 0.1 -- corners closer than this to the camera plane are pulled out to it so close-ups still box the model
+
+    local hasDrawing = type(Drawing) == "table" or type(Drawing) == "userdata"
+    if not hasDrawing then warn(LOG_TAG .. " Drawing library not available - ESP disabled") end
+
+    local cx, cy, cz
+    local m00, m01, m02, m10, m11, m12, m20, m21, m22
+    local hw, hh, focal = 0, 0, 0
+    local lastFov, tf = -1, 1
+
+    local function camUpdate()
+        local cam = workspace.CurrentCamera
+        if not cam then return false end
+        local vp, fov = cam.ViewportSize, cam.FieldOfView
+        hw, hh = vp.X * .5, vp.Y * .5
+        if fov ~= lastFov then
+            lastFov = fov
+            tf = math.tan(math.rad(fov) * .5)
+        end
+        focal = hh / tf
+        cx, cy, cz, m00, m01, m02, m10, m11, m12, m20, m21, m22 = cam.CFrame:GetComponents()
+        return true
+    end
+
+    local function project(x, y, z)
+        local dx, dy, dz = x - cx, y - cy, z - cz
+        local depth = -(m02 * dx + m12 * dy + m22 * dz)
+        if depth < .01 then return end
+        local s = focal / depth
+        return hw + (m00 * dx + m10 * dy + m20 * dz) * s, hh - (m01 * dx + m11 * dy + m21 * dz) * s
+    end
+
+    -- like project(), but a point behind / right at the camera is clamped to the near plane instead of dropped,
+    -- so a character you are zoomed in on (or looking down at) still gets a box that covers it
+    local function projectNear(x, y, z)
+        local dx, dy, dz = x - cx, y - cy, z - cz
+        local depth = -(m02 * dx + m12 * dy + m22 * dz)
+        if depth < NEAR then depth = NEAR end
+        local s = focal / depth
+        local sx = hw + (m00 * dx + m10 * dy + m20 * dz) * s
+        local sy = hh - (m01 * dx + m11 * dy + m21 * dz) * s
+        if sx < -4000 then sx = -4000 elseif sx > 4000 then sx = 4000 end
+        if sy < -4000 then sy = -4000 elseif sy > 4000 then sy = 4000 end
+        return sx, sy
+    end
+
+    -- only touch a Drawing property when it actually changes
+    local visState = setmetatable({}, { __mode = "k" })
+    local function setVisible(o, v)
+        if visState[o] ~= v then
+            visState[o] = v
+            o.Visible = v
+        end
+    end
+
+    local function newText()
+        local t = Drawing.new("Text")
+        t.Size = 13
+        t.Center = true
+        t.Outline = true
+        t.Color = WHITE
+        t.Transparency = 1
+        t.Visible = false
+        pcall(function() t.Font = Drawing.Fonts.System end)
+        return t
+    end
+
+    local function newEntry()
+        local box = Drawing.new("Square")
+        box.Filled = false
+        box.Thickness = 1
+        box.Color = WHITE
+        box.Transparency = 1
+        box.Visible = false
+        local back = Drawing.new("Square")
+        back.Filled = true
+        back.Color = BAR_BACK
+        back.Transparency = 1
+        back.Visible = false
+        local fill = Drawing.new("Square")
+        fill.Filled = true
+        fill.Transparency = 1
+        fill.Visible = false
+        local e = { box = box, back = back, fill = fill, name = newText(), dist = newText() }
+        -- health label is drawn as two left-aligned pieces (name / [HP]) so they can have different colours
+        e.hpA, e.hpB = newText(), newText()
+        e.hpA.Center, e.hpB.Center = false, false
+        return e
+    end
+
+    local function hideEntry(e)
+        setVisible(e.box, false)
+        setVisible(e.back, false)
+        setVisible(e.fill, false)
+        setVisible(e.name, false)
+        setVisible(e.dist, false)
+        setVisible(e.hpA, false)
+        setVisible(e.hpB, false)
+    end
+
+    local function removeEntry(e)
+        for _, o in pairs(e) do
+            if type(o) == "table" or type(o) == "userdata" then
+                pcall(function() o.Visible = false end)
+                pcall(function() o:Remove() end)
+            end
+        end
+    end
+
+    local KINDS = {
+        player = { toggle = "esp_player", color = "esp_player_color" },
+        self   = { toggle = "esp_self",   color = "esp_self_color" },
+    }
+
+    local function getHumanoid(model)
+        local h = model:FindFirstChildOfClass("Humanoid")
+        if not h then h = model:FindFirstChild("Humanoid") end
+        return h
+    end
+
+    local function num(v) return type(v) == "number" and v == v and v or nil end
+
+    -- Health / max health. Humanoid first, then attributes, then Health/MaxHealth values.
+    local function readHealth(model, rec)
+        if not rec.hum then rec.hum = getHumanoid(model) end
+        if rec.hum then
+            local ok, hp, mx = pcall(function() return rec.hum.Health, rec.hum.MaxHealth end)
+            hp, mx = ok and num(hp), ok and num(mx)
+            if hp and mx and mx > 0 then return hp, mx end
+        end
+        local ok, hp, mx = pcall(function()
+            return model:GetAttribute("Health"), model:GetAttribute("MaxHealth")
+        end)
+        hp, mx = ok and num(hp), ok and num(mx)
+        if hp and mx and mx > 0 then return hp, mx end
+        local okv, hv, mv = pcall(function()
+            local a, b = model:FindFirstChild("Health"), model:FindFirstChild("MaxHealth")
+            return a and a.Value, b and b.Value
+        end)
+        hv, mv = okv and num(hv), okv and num(mv)
+        if hv and mv and mv > 0 then return hv, mv end
+        return nil
+    end
+
+    local warnedNoHealth = {}
+    local function warnNoHealth(rec)
+        if warnedNoHealth[rec.name] then return end
+        warnedNoHealth[rec.name] = true
+        warn(LOG_TAG .. " ESP: can't read health for '" .. rec.name .. "' (humanoid " .. (rec.hum and "found" or "missing") .. ")")
+    end
+
+    -- tracked targets: model -> { kind, part, hum, name, entry }
+    local recs = {}
+    local nextRefresh = 0
+
+    local function refreshTargets()
+        local seen = {}
+        local live = workspace:FindFirstChild("Alive")
+        local lp = Players.LocalPlayer
+        local myName = lp and lp.Name
+        if live then
+            for _, model in ipairs(live:GetChildren()) do
+                local nm = model.Name
+                -- other players (Player ESP) and yourself (Self ESP)
+                local kindName = nil
+                if nm == myName then
+                    if Get("esp_self") then kindName = "self" end
+                elseif Get("esp_player") and Players:FindFirstChild(nm) then
+                    kindName = "player"
+                end
+                if kindName then
+                    local rec = recs[model]
+                    if not rec then
+                        local hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+                        if hrp then
+                            rec = { kind = kindName, part = hrp, hum = getHumanoid(model), name = nm,
+                                    display = DisplayName(nm), entry = newEntry() }
+                            recs[model] = rec
+                        end
+                    end
+                    if rec then seen[model] = true end
+                end
+            end
+        end
+        for model, rec in pairs(recs) do
+            if not seen[model] then
+                removeEntry(rec.entry)
+                recs[model] = nil
+            end
+        end
+    end
+
+    local function hideAll()
+        for _, rec in pairs(recs) do hideEntry(rec.entry) end
+    end
+
+    -- 100% green -> 50% yellow -> 0% red
+    local function healthColor(f)
+        if f >= .5 then
+            local t = (f - .5) * 2
+            return Color3.fromRGB(math.floor(255 - 185 * t), math.floor(220 + 35 * t), math.floor(60 + 60 * t))
+        end
+        local t = f * 2
+        return Color3.fromRGB(255, math.floor(60 + 160 * t), 60)
+    end
+
+    -- Text widths: the executor's TextBounds jumps around and runs wide, so the label is laid out from a fixed
+    -- per-letter estimate instead. If the [HP] sits too far from the name lower TEXT_SCALE, if it touches raise it.
+    local TEXT_SCALE = 0.85
+    local LABEL_GAP = 3 -- pixels between "name -" and "[HP]"
+    local function estWidth(str)
+        local w = 0
+        for i = 1, #str do
+            local ch = str:sub(i, i)
+            if ch:find("[il%.,:;!|' ]") then w = w + 3.1
+            elseif ch:find("[%[%]%(%)%-ftjrI]") then w = w + 4.1
+            elseif ch:find("[mwMW]") then w = w + 9.4
+            elseif ch:find("%u") then w = w + 7.5
+            else w = w + 6.2 end
+        end
+        return w * TEXT_SCALE
+    end
+
+    local function drawTarget(model, rec, range)
+        local e, kind = rec.entry, KINDS[rec.kind]
+        if not Get(kind.toggle) then return hideEntry(e) end
+
+        local okp, pos = pcall(function() return rec.part.Position end)
+        if not okp or not pos then return hideEntry(e) end
+
+        local dx, dy, dz = pos.X - cx, pos.Y - cy, pos.Z - cz
+        local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if range > 0 and dist > range then return hideEntry(e) end
+
+        -- the camera is at / behind the character (first person, or inside it): nothing sensible to draw
+        local cdepth = -(m02 * dx + m12 * dy + m22 * dz)
+        if cdepth < 0.6 then return hideEntry(e) end
+
+        -- box = the character's 8-corner volume, turned to face the same way as its root part
+        local okr, _, _, _, r00, _, r02, _, _, _, r20, _, r22 = pcall(function() return rec.part.CFrame:GetComponents() end)
+        local rx, rz, fx, fz = 1, 0, 0, 1
+        if okr and r00 then
+            local rl = math.sqrt(r00 * r00 + r20 * r20)
+            local fl = math.sqrt(r02 * r02 + r22 * r22)
+            if rl > 1e-3 and fl > 1e-3 then rx, rz, fx, fz = r00 / rl, r20 / rl, r02 / fl, r22 / fl end
+        end
+        local minx, miny, maxx, maxy = 1e9, 1e9, -1e9, -1e9
+        for sxn = -1, 1, 2 do
+            for szn = -1, 1, 2 do
+                local ox = pos.X + rx * BOX_HW * sxn + fx * BOX_HD * szn
+                local oz = pos.Z + rz * BOX_HW * sxn + fz * BOX_HD * szn
+                for k = 1, 2 do
+                    local sx, sy = projectNear(ox, k == 1 and pos.Y + BOX_UP or pos.Y - BOX_DOWN, oz)
+                    if sx < minx then minx = sx end
+                    if sx > maxx then maxx = sx end
+                    if sy < miny then miny = sy end
+                    if sy > maxy then maxy = sy end
+                end
+            end
+        end
+        local w, h = maxx - minx, maxy - miny
+        if h < 2 then return hideEntry(e) end
+        -- whole pixels only: fewer Drawing writes and no sub-pixel shimmer
+        local left, top = math.floor(minx + .5), math.floor(miny + .5)
+        w, h = math.floor(w + .5), math.floor(h + .5)
+        local tx = left + w * .5
+
+        local col = Get(kind.color) or WHITE
+        if e.col ~= col then
+            e.col = col
+            e.box.Color = col
+            e.nameCol = nil
+            -- dark colours vanish into the black text outline, so give them a white one
+            local lum = col.R * .299 + col.G * .587 + col.B * .114
+            local outline = lum < .25 and WHITE or BLACK
+            pcall(function() e.name.OutlineColor = outline end)
+            pcall(function() e.hpA.OutlineColor = outline end)
+        end
+
+        if Get("esp_box") then
+            if e.bl ~= left or e.bt ~= top then e.bl, e.bt = left, top e.box.Position = Vector2.new(left, top) end
+            if e.bw ~= w or e.bh ~= h then e.bw, e.bh = w, h e.box.Size = Vector2.new(w, h) end
+            setVisible(e.box, true)
+        else
+            setVisible(e.box, false)
+        end
+
+        local drewBar = false
+        local hpText, hpF
+        if Get("esp_health") then
+            local hp, mx = readHealth(model, rec)
+            if hp then
+                hpF = hp / mx
+                hpF = hpF < 0 and 0 or (hpF > 1 and 1 or hpF)
+                if Get("esp_health_bar") then
+                    -- empty and filled parts sit side by side so draw order can't hide the fill
+                    local barX = left - 6
+                    local fillH = math.max(math.floor(h * hpF + .5), 1)
+                    local emptyH = h - fillH
+                    if e.fx ~= barX or e.fy ~= top + emptyH then e.fx, e.fy = barX, top + emptyH e.fill.Position = Vector2.new(barX, top + emptyH) end
+                    if e.fh ~= fillH then e.fh = fillH e.fill.Size = Vector2.new(3, fillH) end
+                    local fcol = Get("esp_health_color") and healthColor(hpF) or BAR_GREEN
+                    if e.fcol ~= fcol then e.fcol = fcol e.fill.Color = fcol end
+                    setVisible(e.fill, true)
+                    if emptyH >= 1 then
+                        if e.kx ~= barX or e.ky ~= top then e.kx, e.ky = barX, top e.back.Position = Vector2.new(barX, top) end
+                        if e.kh ~= emptyH then e.kh = emptyH e.back.Size = Vector2.new(3, emptyH) end
+                        setVisible(e.back, true)
+                    else
+                        setVisible(e.back, false)
+                    end
+                    drewBar = true
+                end
+                if Get("esp_health_text") then hpText = "[" .. math.floor(hp + .5) .. "]" end
+            else
+                warnNoHealth(rec)
+            end
+        end
+        if not drewBar then
+            setVisible(e.back, false)
+            setVisible(e.fill, false)
+        end
+
+        -- label: "name - [HP]". The name keeps the ESP colour; the [HP] part takes the health colour.
+        local shown = rec.display
+        if not shown or shown == "" or not Get("esp_name") then shown = nil end
+
+        if hpText then
+            local numCol = col
+            if hpF and Get("esp_health_color") then numCol = healthColor(hpF) end
+            local pre = shown and (shown .. " -") or ""
+            if e.hpPre ~= pre then e.hpPre = pre e.hpA.Text = pre end
+            if e.hpNum ~= hpText then e.hpNum = hpText e.hpB.Text = hpText end
+            if e.hpCol ~= col then
+                e.hpCol = col
+                e.hpA.Color = col
+            end
+            if e.hpNumCol ~= numCol then
+                e.hpNumCol = numCol
+                e.hpB.Color = numCol
+            end
+            e.wB = estWidth(hpText)
+            e.wAll = pre == "" and e.wB or (estWidth(pre) + LABEL_GAP + e.wB)
+
+            local y = top - 16
+            local x = math.floor(tx - e.wAll * .5 + .5)
+            if e.hx ~= x or e.hy ~= y then
+                e.hx, e.hy = x, y
+                e.hpA.Position = Vector2.new(x, y)
+                e.hpB.Position = Vector2.new(x + math.floor(e.wAll - e.wB + .5), y)
+            end
+            setVisible(e.hpA, pre ~= "")
+            setVisible(e.hpB, true)
+            setVisible(e.name, false)
+        else
+            setVisible(e.hpA, false)
+            setVisible(e.hpB, false)
+            if shown then
+                if e.nameCol ~= col then
+                    e.nameCol = col
+                    e.name.Color = col
+                end
+                if e.name.Text ~= shown then e.name.Text = shown end
+                if e.nx ~= tx or e.ny ~= top - 16 then e.nx, e.ny = tx, top - 16 e.name.Position = Vector2.new(tx, top - 16) end
+                setVisible(e.name, true)
+            else
+                setVisible(e.name, false)
+            end
+        end
+
+        if Get("esp_distance") and rec.kind ~= "self" then
+            local txt = string.format("[%d]", math.floor(dist + .5))
+            if e.dist.Text ~= txt then e.dist.Text = txt end
+            if e.dx ~= tx or e.dy ~= top + h + 6 then e.dx, e.dy = tx, top + h + 6 e.dist.Position = Vector2.new(tx, top + h + 6) end
+            setVisible(e.dist, true)
+        else
+            setVisible(e.dist, false)
+        end
+    end
+
+    -- RANGE RINGS: circles on the ground around your character (no text), one for the General Range and one
+    -- for the Tracking Range. Each is a set of projected Line segments.
+    local RING_SEGS = 48
+    local rings = {
+        range = { lines = nil, shown = false },
+        track = { lines = nil, shown = false },
+    }
+    local function hideRing(r)
+        if not r.shown then return end
+        r.shown = false
+        for i = 1, #r.lines do setVisible(r.lines[i], false) end
+    end
+    local function drawRing(r, pos, radius, col)
+        if not r.lines then
+            r.lines = {}
+            for i = 1, RING_SEGS do
+                local l = Drawing.new("Line")
+                l.Thickness = 1
+                l.Transparency = 1
+                l.Visible = false
+                r.lines[i] = l
+            end
+        end
+        if r.col ~= col then
+            r.col = col
+            for i = 1, RING_SEGS do r.lines[i].Color = col end
+        end
+        local gy = pos.Y - 3 -- roughly the floor under the character
+        local px, py
+        for i = 0, RING_SEGS do
+            local a = (i / RING_SEGS) * math.pi * 2
+            local sx, sy = project(pos.X + math.cos(a) * radius, gy, pos.Z + math.sin(a) * radius)
+            if i > 0 then
+                local l = r.lines[i]
+                if sx and px then
+                    l.From = Vector2.new(px, py)
+                    l.To = Vector2.new(sx, sy)
+                    setVisible(l, true)
+                else
+                    setVisible(l, false)
+                end
+            end
+            px, py = sx, sy
+        end
+        r.shown = true
+    end
+    local function hideRings()
+        hideRing(rings.range)
+        hideRing(rings.track)
+    end
+    local function drawRings(wantRange, wantTrack)
+        local lp = Players.LocalPlayer
+        local char = lp and lp.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local okp, pos = pcall(function() return hrp and hrp.Position end)
+        if not okp or not pos then return hideRings() end
+        local general = Get("sb_range") or 20
+        if wantRange then
+            drawRing(rings.range, pos, general, Get("sb_display_range_color") or WHITE)
+        else
+            hideRing(rings.range)
+        end
+        if wantTrack then
+            drawRing(rings.track, pos, Get("sb_track_range") or 40, Get("sb_display_track_color") or WHITE)
+        else
+            hideRing(rings.track)
+        end
+    end
+
+    Nexa:OnDestroy(function()
+        for _, rec in pairs(recs) do removeEntry(rec.entry) end
+        recs = {}
+        for _, r in pairs(rings) do
+            if r.lines then
+                for i = 1, RING_SEGS do
+                    pcall(function() r.lines[i].Visible = false end)
+                    pcall(function() r.lines[i]:Remove() end)
+                end
+                r.lines = nil
+            end
+        end
+    end)
+
+    if hasDrawing then task.spawn(function()
+        local wasOn = false
+        local lastErr
+        while Nexa:IsAlive() do
+            local onPlayers = Get("esp_enabled") and (Get("esp_player") or Get("esp_self"))
+            local wantRange = Get("sb_display_range") and Get("sb_use_general_range")
+            local wantTrack = Get("sb_display_track")
+            local onRing = wantRange or wantTrack
+            if not onPlayers and not onRing then
+                if wasOn then hideAll() hideRings() wasOn = false end
+                task.wait(0.1)
+            else
+                wasOn = true
+                local now = os.clock()
+                local ok, err = pcall(function()
+                    if not camUpdate() then hideAll() return hideRings() end
+                    if onPlayers then
+                        if now >= nextRefresh then
+                            nextRefresh = now + REFRESH
+                            refreshTargets()
+                        end
+                        local range = Get("esp_range") or 0
+                        for model, rec in pairs(recs) do drawTarget(model, rec, range) end
+                    else
+                        hideAll()
+                    end
+                    if onRing then drawRings(wantRange, wantTrack) else hideRings() end
+                end)
+                if not ok and err ~= lastErr then lastErr = err warn(LOG_TAG .. " esp error: " .. tostring(err)) end
+                task.wait()
+            end
+        end
+    end) end
 end
 
 -- QOL TAB
@@ -1568,7 +2108,7 @@ end
 -- CONFIG AUTOSAVE / AUTOLOAD
 do
     local CONFIG_FILE = "DemonSlayer_Config.json"
-    local SKIP = { sb_t_ping = true, print_parries = true, print_feints = true, debug_hits = true, auto_log = true, auto_mediate = true }
+    local SKIP = { sb_t_ping = true, print_parries = true, print_feints = true, debug_hits = true }
 
     if type(readfile) == "function" and type(isfile) == "function" then
         local ok, raw = pcall(function()
@@ -1938,7 +2478,7 @@ end
 
 -- DEBUG TAB
 -- Left column: Data (reload + console dumps), Logging (console output toggles), Tools (quick checks / tests).
--- Right column: Status (live info), Script (unload).
+-- Right column: Status (live info).
 local dataSec  = debugTab:AddSection("Data", "Animation data and ignore list from GitHub, and console dumps.", { Column = "left" })
 local logSec   = debugTab:AddSection("Logging", "Console output while auto parry runs.", { Column = "left" })
 local toolsSec = debugTab:AddSection("Tools", "Quick checks and tests.", { Column = "left" })
@@ -2033,7 +2573,6 @@ St.Loop = statSec:AddStatus({ Title = "Loop / Scan",   Default = "0 / 0 ms", Ton
 St.Ping = statSec:AddStatus({ Title = "Ping / Comp",   Default = "-", Tone = "muted" })
 St.Feint = statSec:AddStatus({ Title = "Feint monitor", Default = "-", Tone = "muted" })
 end
-local scriptSec = debugTab:AddSection("Script", "Unload the script and give input back to the game.", { Column = "right" })
 
 local function ApplyPing(samples, silent)
     samples = samples or 1
@@ -2203,7 +2742,7 @@ function HitWatch.Step(now)
             elseif w.scheduled then
                 fired = "nothing fired yet"
             else
-                fired = "not scheduled (out of range / chance)"
+                fired = "not scheduled (Parry Chance)"
             end
             Log(string.format("HIT by %s | %s | -%.0f HP, %.0fms after the animation started | %s | %.1f studs away",
                 w.enemy, AnimNameId(w.id), w.hp0 - hp, (now - w.startAt) * 1000, fired, w.dist or 0))
@@ -2227,7 +2766,7 @@ end
 -- Combat state kept in one table (the script is close to Lua's limit of local variables):
 --   lastDodge : os.clock() of the last dodge (Q) that went out, for the Dodge Cooldown
 --   Feint     : the feint monitor (built below)
-local Combat = { lastDodge = -math.huge }
+local Combat = { lastDodge = -math.huge, Pending = {} }
 
 --------------------------------------------------------------------------------------------------
 -- FEINT MONITOR
@@ -2745,40 +3284,10 @@ do
     TestAction("Test Dodge", "dodge")
 end
 
--- UNLOAD: fully destroys the script. Nexa:Destroy() ends every loop (they all run `while Nexa:IsAlive()`),
--- removes all drawings, releases the held keys (see OnDestroy below) and gives the game its input back. The
--- exported globals are cleared too so nothing keeps a reference to the dead library.
-scriptSec:AddButton({
-    Title = "",
-    ButtonText = "Unload Script",
-    Variant = "danger",
-    Expand = true,
-    Callback = function()
-        task.spawn(function()
-            pcall(function() Nexa:Destroy() end)
-            -- remove everything the UI drew, then once more shortly after in case something was redrawn
-            local removed = RemoveTrackedDrawings()
-            task.wait(0.25)
-            removed = removed + RemoveTrackedDrawings()
-            if removed == 0 and type(cleardrawcache) == "function" then pcall(cleardrawcache) end
-            if DrawingLib and OrigDrawingNew then pcall(function() DrawingLib.new = OrigDrawingNew end) end
-            if type(setrobloxinput) == "function" then pcall(setrobloxinput, true) end
-            pcall(function()
-                local env = type(getgenv) == "function" and getgenv() or nil
-                for _, k in ipairs({ "Nexa", "UI", "DrawingUI" }) do
-                    if env and env[k] == Nexa then env[k] = nil end
-                    if rawget(_G, k) == Nexa then _G[k] = nil end
-                    if type(shared) == "table" and shared[k] == Nexa then shared[k] = nil end
-                end
-            end)
-        end)
-    end,
-})
-
 -- Every action is queued at startTime + action.t - ping comp and pressed as soon as it is due (next frame at the
 -- latest). Detect Feints only decides whether to skip it; it never waits or delays anything.
 -- `fst` is the enemy's feint state (nil when Detect Feints is off); it is only stored on the queue entry.
-local function Schedule(startTime, info, akey, model, id, fst)
+local function Schedule(startTime, info, akey, model, id, fst, enemy)
     local Feint = Combat.Feint
     local delay = 0
     local ping  = GetPingComp()
@@ -2795,6 +3304,8 @@ local function Schedule(startTime, info, akey, model, id, fst)
                 kind       = action.kind,
                 owner      = akey,
                 model      = model,
+                enemy      = enemy,
+                info       = info,
                 st         = fst,
                 id         = id,
                 seenAt     = now,
@@ -2830,6 +3341,18 @@ local function FireDue()
         -- due: press now. The feint monitor has already published anything it saw (q.feint, set the moment the
         -- feint was detected); this only reads that state, so nothing here waits or polls.
         if t >= q.at then
+          -- Tracking Range only decides what gets tracked. The parry itself is only tried if the enemy is inside the
+          -- normal range (General Range, or the animation's own base distance) at the moment the action is due.
+          local animRange = Get("sb_use_general_range") and (Get("sb_range") or 20)
+              or (q.info and q.info.range) or DEFAULT_ANIM_RANGE
+          local outRange = q.enemy and Dist(q.enemy) > animRange
+          if outRange then
+            if Get("print_parries") then
+                local okN, nm = pcall(function() return q.model.Name end)
+                Log(string.format("Skipped %s@%.3f | %s | %s | enemy %.1f studs away, outside the %.0f stud range",
+                    q.kind, q.actionT or 0, okN and DisplayName(nm) or "?", AnimNameId(q.id), Dist(q.enemy), animRange))
+            end
+          else
             local ev = nil
             if watchFeint then
                 ev = q.feint
@@ -2862,6 +3385,7 @@ local function FireDue()
                 if q.st then q.st.firedAt = os.clock() end
                 Perform(q.kind, q.hold, tag, q.model, q.id, nil, { seenAt = q.seenAt, startAt = q.startAt, akey = q.owner })
             end
+          end
 
             table.remove(Queue, i)
         end
@@ -2881,8 +3405,9 @@ local function ScanStep(now)
     local doPlayers, doNpcs = cPlayers.Value, cNpcs.Value
     local useGeneral = cGeneral.Value
     local generalRange = cRange.Value or 20
-    -- enemies further than this are skipped without reading their animations
-    local nearRange = (useGeneral and generalRange or math.max(AnimMaxRange, DEFAULT_ANIM_RANGE)) * 1.5
+    -- enemies further than the Tracking Range are skipped without reading their animations (so nothing is
+    -- parried beyond it either, whatever the normal range is)
+    local nearRange = Get("sb_track_range") or 40
     local seenNow, tracked = {}, 0
     local skipFaction = (not cSameFaction.Value) and MyFaction or nil
     local watchFeint = Get("sb_feint_detect")
@@ -2917,13 +3442,13 @@ local function ScanStep(now)
                         if not Active[akey] then
                             Status.last, Status.lastDist = info.name or id, dist
 
-                            local animRange = useGeneral and generalRange or info.range or DEFAULT_ANIM_RANGE
-                            local scheduled = false
-                            if dist <= animRange and math.random(1, 100) <= (cChance.Value or 100) then
+                            -- every tracked animation is scheduled (subject to Parry Chance); the range check
+                            -- happens when each action comes due (see FireDue)
+                            local scheduled = math.random(1, 100) <= (cChance.Value or 100)
+                            if scheduled then
                                 local start = os.clock() - (anim.elapsed or 0)
                                 Active[akey] = start
-                                Schedule(start, info, akey, enemy.model, id, fs)
-                                scheduled = true
+                                Schedule(start, info, akey, enemy.model, id, fs, enemy)
                             else
                                 Active[akey] = now
                             end
@@ -2940,309 +3465,6 @@ local function ScanStep(now)
     end
     Status.tracked = tracked
     Status.scanMs = Status.scanMs * 0.8 + (os.clock() - scanStart) * 1000 * 0.2
-end
-
--- AUTOMATION LOGIC
--- Wrapped in do...end so its locals don't count against the script's top-level local limit.
-do
-    local function child(root, ...)
-        local current = root
-        for _, name in ipairs({ ... }) do
-            current = current and current:FindFirstChild(name)
-            if not current then return nil end
-        end
-        return current
-    end
-
-    local function localRoot()
-        local lp = Players.LocalPlayer
-        local char = lp and lp.Character
-        return char and char:FindFirstChild("HumanoidRootPart")
-    end
-
-    local function teleport(pos)
-        local root = localRoot()
-        if not root then return false end
-        root.CFrame = CFrame.new(pos.X, pos.Y, pos.Z)
-        return true
-    end
-
-    local function on(flag)
-        return Nexa:IsAlive() and Get(flag)
-    end
-
-    -- waits up to `seconds`, returning false early if the toggle is turned off
-    local function waitFor(flag, seconds)
-        local untilAt = os.clock() + seconds
-        while os.clock() < untilAt do
-            if not on(flag) then return false end
-            task.wait(0.05)
-        end
-        return on(flag)
-    end
-
-    local function MoveMouse(x, y)
-        if type(mousemoveabs) == "function" then
-            pcall(mousemoveabs, x, y)
-        end
-    end
-
-    local function LeftClick()
-        if type(mouse1click) == "function" then
-            pcall(mouse1click)
-        elseif type(mouse1press) == "function" and type(mouse1release) == "function" then
-            pcall(mouse1press)
-            task.wait(0.03)
-            pcall(mouse1release)
-        end
-    end
-
-    -- AUTO LOG (STR)
-    local LOG_A = Vector3.new(-4395.79, 305, -2580.49)
-    local LOG_B = Vector3.new(-4222.28, 305, -2578.24)
-
-    task.spawn(function()
-        local lastErr
-        while Nexa:IsAlive() do
-            if Get("auto_log") then
-                local ok, err = pcall(function()
-                    if not teleport(LOG_A) then task.wait(0.5) return end
-                    if not waitFor("auto_log", 1) then return end
-                    -- spam E for about half a second
-                    local spamUntil = os.clock() + 0.5
-                    while os.clock() < spamUntil and on("auto_log") do
-                        PressKey(KEY_E, 0.03)
-                        task.wait(0.06)
-                    end
-                    if not on("auto_log") then return end
-                    teleport(LOG_B)
-                    waitFor("auto_log", 0.5)
-                end)
-                if not ok and err ~= lastErr then lastErr = err warn(LOG_TAG .. " auto log error: " .. tostring(err)) end
-                task.wait()
-            else
-                task.wait(0.25)
-            end
-        end
-    end)
-
-    -- AUTO MEDITATE (FOCUS)
-    local MEDITATE_MIN_YEN = 25
-    local ORB_MAX_SIZE = 150 -- only frames this small (px) count as orbs
-
-    -- "¥25" -> 25, "¥2.0K" -> 2000, "¥1.5M" -> 1500000
-    local function readYen()
-        local lp = Players.LocalPlayer
-        local yenObj = child(lp, "PlayerGui", "HUD", "Currency", "Yen")
-        if not yenObj then return nil end
-        local ok, text = pcall(function() return yenObj.Text end)
-        if not ok or type(text) ~= "string" then return nil end
-        text = text:gsub(",", "")
-        local num, suffix = text:match("([%d%.]+)%s*([KkMmBb]?)")
-        num = tonumber(num)
-        if not num then return nil end
-        local mult = ({ k = 1e3, m = 1e6, b = 1e9 })[string.lower(suffix or "")] or 1
-        return num * mult
-    end
-
-    local function instPosition(inst)
-        -- a plain part: just read Position (errors on a Model, which is fine inside pcall)
-        local okDirect, direct = pcall(function() return inst.Position end)
-        if okDirect and direct then return direct end
-        local okPrimary, primary = pcall(function() return inst.PrimaryPart.Position end)
-        if okPrimary and primary then return primary end
-        local okC, cf = pcall(function() return inst.CFrame end)
-        if okC and cf then return cf.Position end
-        local okM, pivot = pcall(function() return inst:GetPivot() end)
-        if okM and pivot then return pivot.Position end
-        local okP, isPart = pcall(function() return inst:IsA("BasePart") end)
-        if okP and isPart then return inst.Position end
-        local okD, list = pcall(function() return inst:GetDescendants() end)
-        if okD and type(list) == "table" then
-            for _, d in ipairs(list) do
-                local okB, isBase = pcall(function() return d:IsA("BasePart") end)
-                if okB and isBase then return d.Position end
-            end
-        end
-        return nil
-    end
-
-    local function pickMat()
-        local mats = child(workspace, "TrainingAreas", "Blood Focus Arena", "Mats")
-        if not mats then
-            local area = child(workspace, "TrainingAreas")
-            local arena = area and area:FindFirstChild("Blood Focus Arena")
-            Log("Auto Mediate: Mats folder not found. TrainingAreas "
-                .. (area and "exists" or "MISSING") .. ", Blood Focus Arena " .. (arena and "exists" or "MISSING"))
-            if arena then
-                local names = {}
-                for _, c in ipairs(arena:GetChildren()) do names[#names + 1] = c.Name end
-                Log("Blood Focus Arena children: " .. table.concat(names, ", "))
-            end
-            return nil
-        end
-        -- mats are named "Focus Mat 1" .. "Focus Mat 8"; pick one at random so it isn't always the same mat
-        local order = { 1, 2, 3, 4, 5, 6, 7, 8 }
-        for i = #order, 2, -1 do
-            local j = math.random(1, i)
-            order[i], order[j] = order[j], order[i]
-        end
-        for _, n in ipairs(order) do
-            local mat = mats:FindFirstChild("Focus Mat " .. n)
-            -- the main part of each mat is its child named "Mat"
-            local main = mat and mat:FindFirstChild("Mat")
-            local pos = main and instPosition(main)
-            if pos then return pos + Vector3.new(0, 3, 0) end
-        end
-
-        -- nothing matched the "Focus Mat N" names: try any child, and say what is actually in the folder
-        local names = {}
-        for _, c in ipairs(mats:GetChildren()) do
-            local okCls, cls = pcall(function() return c.ClassName end)
-            names[#names + 1] = c.Name .. ":" .. (okCls and cls or "?")
-            local pos = instPosition(c:FindFirstChild("Mat") or c)
-            if pos then return pos + Vector3.new(0, 3, 0) end
-        end
-        Log("Auto Mediate: Mats found but no position could be read. Children: "
-            .. (#names > 0 and table.concat(names, ", ") or "(none)"))
-        return nil
-    end
-
-    -- centre of a GUI object in screen pixels
-    local function guiCenter(obj)
-        local ok, x, y = pcall(function()
-            local p, s = obj.AbsolutePosition, obj.AbsoluteSize
-            return p.X + s.X * 0.5, p.Y + s.Y * 0.5
-        end)
-        if ok then return x, y end
-        return nil
-    end
-
-    -- the orb frame whose centre is closest to the top-left corner (0, 0), or nil if there are none
-    local function closestOrb()
-        local arena = child(Players.LocalPlayer, "PlayerGui", "Minigames", "ArenaHUD")
-        if not arena then return nil end
-        local okD, list = pcall(function() return arena:GetDescendants() end)
-        if not okD or type(list) ~= "table" then return nil end
-
-        local bestX, bestY, bestDist
-        for _, d in ipairs(list) do
-            local ok, isFrame = pcall(function() return d.ClassName == "Frame" and d.Visible end)
-            if ok and isFrame then
-                local okS, w, h = pcall(function() return d.AbsoluteSize.X, d.AbsoluteSize.Y end)
-                if okS and w > 0 and h > 0 and w <= ORB_MAX_SIZE and h <= ORB_MAX_SIZE then
-                    local x, y = guiCenter(d)
-                    if x then
-                        local dist = math.sqrt(x * x + y * y)
-                        if not bestDist or dist < bestDist then bestX, bestY, bestDist = x, y, dist end
-                    end
-                end
-            end
-        end
-        return bestX, bestY
-    end
-
-    local function MeditateSequence()
-        local yen = readYen()
-        if not yen then
-            Log("Auto Mediate: could not read your yen (HUD.Currency.Yen)")
-            return false
-        end
-        if yen <= MEDITATE_MIN_YEN then
-            Log("Auto Mediate: need more than " .. MEDITATE_MIN_YEN .. " yen (you have " .. yen .. "), turning off")
-            Nexa:Notify({ Title = "Auto Mediate", Content = "Not enough yen (need more than 25).", Type = "warning", Duration = 4 })
-            local c = Controls.auto_mediate
-            if c then pcall(function() c:SetValue(false) end) end
-            return false
-        end
-
-        local mat = pickMat()
-        if not mat then
-            Log("Auto Mediate: no mat found under TrainingAreas.Blood Focus Arena.Mats")
-            return false
-        end
-        teleport(mat)
-        if not waitFor("auto_mediate", 0.5) then return false end
-        PressKey(KEY_E, 0.05)
-        if not waitFor("auto_mediate", 0.5) then return false end
-
-        local yes = child(Players.LocalPlayer, "PlayerGui", "ConfirmationGui", "Frame", "BottomBar", "Choices", "YesBtn", "Label")
-        local x, y = yes and guiCenter(yes)
-        if not x then
-            Log("Auto Mediate: confirmation button not found")
-            return false
-        end
-        MoveMouse(x, y)
-        if not waitFor("auto_mediate", 0.5) then return false end
-        LeftClick()
-        return true
-    end
-
-    -- the minigame counts as "up" while ArenaHUD exists (and isn't hidden, if it has a Visible/Enabled flag)
-    local function arenaUp()
-        local arena = child(Players.LocalPlayer, "PlayerGui", "Minigames", "ArenaHUD")
-        if not arena then return false end
-        local okV, vis = pcall(function() return arena.Visible end)
-        if okV and type(vis) == "boolean" then return vis end
-        local okE, en = pcall(function() return arena.Enabled end)
-        if okE and type(en) == "boolean" then return en end
-        return true
-    end
-
-    local ARENA_START_TIMEOUT = 10 -- if ArenaHUD never shows up after confirming, try again
-    local ARENA_GONE_DELAY = 0.5   -- ArenaHUD must stay gone this long before it counts as finished
-
-    task.spawn(function()
-        -- idle: start a session. waiting: session started, ArenaHUD not seen yet. inside: ArenaHUD is up.
-        local state, nextTry, startedAt, goneAt, lastErr = "idle", 0, 0, nil, nil
-        while Nexa:IsAlive() do
-            if Get("auto_mediate") then
-                local ok, err = pcall(function()
-                    local now = os.clock()
-                    local up = arenaUp()
-
-                    if state == "idle" then
-                        if up then
-                            -- already in the minigame (started by hand): treat it as a running session
-                            state, goneAt = "inside", nil
-                        elseif now >= nextTry then
-                            if MeditateSequence() then
-                                state, startedAt = "waiting", os.clock()
-                            else
-                                nextTry = os.clock() + 1.5
-                            end
-                        end
-                    elseif state == "waiting" then
-                        if up then
-                            state, goneAt = "inside", nil
-                        elseif now - startedAt > ARENA_START_TIMEOUT then
-                            Log("Auto Mediate: ArenaHUD never appeared, trying again")
-                            state, nextTry = "idle", 0
-                        end
-                    end
-
-                    if state == "inside" then
-                        if up then
-                            goneAt = nil
-                            local ox, oy = closestOrb()
-                            if ox then MoveMouse(ox, oy) end
-                        else
-                            goneAt = goneAt or now
-                            if now - goneAt >= ARENA_GONE_DELAY then
-                                -- ArenaHUD popped up and went away: the session is over, start the next one
-                                state, nextTry, goneAt = "idle", 0, nil
-                            end
-                        end
-                    end
-                end)
-                if not ok and err ~= lastErr then lastErr = err warn(LOG_TAG .. " auto mediate error: " .. tostring(err)) end
-                task.wait(0.02)
-            else
-                state, nextTry, goneAt = "idle", 0, nil
-                task.wait(0.25)
-            end
-        end
-    end)
 end
 
 -- SPAM E (QOL)
